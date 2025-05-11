@@ -4,7 +4,8 @@ This repository contains outage and weather data processing scripts using the Ea
 
 ## Folder Structure
 - **Eaglei_data/**: Raw outage data for all counties.
-- **cleaned/**: Folder where cleaned data is stored after preprocessing.
+- **cleaned_data/**: Folder where cleaned data is stored after preprocessing.
+- **weather_data_NOAA/**: It contains raw uncleaned weather data
 
 ## Scripts
 
