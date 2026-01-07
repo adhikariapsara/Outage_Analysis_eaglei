@@ -46,84 +46,16 @@ def preprocess_weather_data(df, column, replace_dict=None, create_occurrence=Fal
 
     return df
 
-# def find_county(file, state, county):
-#     # Event Datasets
-#     weather_dataset=pd.read_parquet(file)
-#     columns_to_keep = ['station', 'valid', 'tmpf', 'sknt', 'p01i', 'gust', 'lon', 'lat']
-#     weather_dataset = weather_dataset[columns_to_keep]
-#
-#     # Load counties GeoJSON (replace 'ma_counties.geojson' with your file path)
-#     counties = gpd.read_file('gz_2010_us_050_00_5m.json', encoding='latin1')
-#     # ensure we are only looking in correct states (avoid duplicate county names and speed up process)
-#     county_to_fips=pd.read_csv('Eagle-idatasets/county_fips_master.csv', encoding='latin')
-#     ans=county_to_fips[county_to_fips['county_name']==f'{county} County']
-#     ans=ans[ans['state_name']==state]
-#     target_state_fips=round(ans['state'].values[0])
-#     # ---- Filter counties early ----
-#     counties = counties.copy()
-#     counties['STATE'] = counties['STATE'].astype(int)
-#     counties = counties.query('STATE == @target_state_fips')
-#     target_county = counties.query('NAME == @county')
-#
-#     if target_county.empty:
-#         raise ValueError("County not found")
-#
-#     # ---- Create stations GeoDataFrame ----
-#     stations = gpd.GeoDataFrame(
-#         weather_dataset,
-#         geometry=gpd.points_from_xy(
-#             weather_dataset.lon,
-#             weather_dataset.lat
-#         ),
-#         crs="EPSG:4326"
-#     )
-#
-#     # ---- Spatial join only with target county ----
-#     joined = gpd.sjoin(
-#         stations,
-#         target_county,
-#         how="inner",
-#         predicate="within"
-#     )
-#
-#     if not joined.empty:
-#         return joined
-#
-#     # ---- No stations in county → find nearest ----
-#     print(f"Warning: No weather stations in {county} county.")
-#
-#     # Project for distance calculations
-#     stations_proj = stations.to_crs(epsg=5070)
-#     county_proj = target_county.to_crs(epsg=5070)
-#
-#     # Use spatial index nearest
-#     nearest_idx = stations_proj.sindex.nearest(
-#         county_proj.geometry.iloc[0],
-#         return_all=False
-#     )[1][0]
-#
-#     station_data = stations.iloc[[nearest_idx]]
-#
-#     print(
-#         f"Using nearest weather station to {county} county: "
-#         f"{station_data['station'].iloc[0]}"
-#     )
-#
-#     return station_data
-
-
 # =====================================
 # Preprocess each weather component
 # =====================================
 def main(state, county, start, end):
 
-    file=f'weather_data/{state}/weather_{state}_{start}_{end}.parquet'
+    file=f'weather_data/{state}/weather_{state}_{county}_{start}_{end}.parquet'
     # Event Datasets
     weather_data=pd.read_parquet(file)
     columns_to_keep = ['station', 'valid', 'tmpf', 'sknt', 'p01i', 'gust', 'lon', 'lat']
     weather_data = weather_data[columns_to_keep]
-
-    print('Sorting weather data at the county-level.')
     print("Cleaning weather data.")
     #df_dew    = preprocess_weather_data(file,        'dwpf')
     df_gust   = preprocess_weather_data(weather_data,            'gust')

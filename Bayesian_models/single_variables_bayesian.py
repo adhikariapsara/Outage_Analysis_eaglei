@@ -5,22 +5,21 @@ import pymc as pm
 import arviz as az
 
 # inputs
-state='Washington'
-county='King'
+state='Illinois'
+county='Cook'
 start='2018'
 end='2024'
-threshold=0.001
+threshold=0.0001
 # target variables: wind_speed, gust, precipitation, Air_temp, Air_temp_min
-target_variable='Air_temp'
+target_variable='max_gust'
 
 #load datasets
-#df=pd.read_csv(f'../Results/Visualization_of_Data_{county}_All_{start}-{end}_{threshold}_all_weather.csv')
-df = pd.read_csv(f'../Results/Outage_Events_Summary_All_{county}_{threshold}_{start}-{end}.csv')
+df = pd.read_parquet(f'../Results/Outage_Events_Summary_All_{county}_{threshold}_{start}-{end}.parquet')
 print(df.head())
 print(df.columns)
 
 
-#df = df[df['out_duration_max']<24]
+df = df[df['max_gust']<60]
 df[target_variable] = (df[target_variable] ).round()
 
 # average all outage instances over their target weather variable
@@ -46,7 +45,7 @@ def fit_loglinear(y_obs):
         mu_log = a_log + b * x + c
         pm.Normal('y', mu=mu_log, sigma=sigma, observed=y_log)
 
-        trace = pm.sample(1000, tune=1000, chains=2, cores=1,
+        trace = pm.sample(1000, tune=1000, chains=4, cores=1,
                           target_accept=0.95,
                           random_seed=42, return_inferencedata=True)
 
@@ -94,6 +93,12 @@ for ax, (title, y_data, y_mean, y_std, color) in zip(axes, panels):
     ax.grid(True, linestyle='--', alpha=0.4)
     ax.tick_params(axis='both', which='major', labelsize=14)
     ax.legend(fontsize=16, loc='upper left')
+    data_results = pd.DataFrame(columns=[target_variable, 'y_avg', 'y_lower', 'y_upper'])
+    data_results[target_variable]=x_new
+    data_results['y_avg']=y_mean
+    data_results['y_lower']=y_mean - 2*y_std
+    data_results['y_upper']=y_mean + 2*y_std
+    data_results.to_csv(f'exp_fit/{state}_{county}_{title}_{target_variable}_fit.csv')
 
 axes[-1].set_xlabel(f'{target_variable}', fontsize=18, fontweight='bold')
 ax.tick_params(axis='both', which='major', labelsize=14)

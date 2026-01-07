@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-def main(state, county, start, end, pct_threshold):
+def main(state, county, start, end, value, approach):
     # Load MCC Data
     print("Aligning outage and weather data.")
     pdf = pd.read_csv('Eagle-idatasets/MCC.csv')
@@ -16,12 +16,26 @@ def main(state, county, start, end, pct_threshold):
     result = pdf[pdf['County_FIPS'] == target_fips]
     customers = result['Customers'].values[0]
     #print(customers)
-    threshold=round(pct_threshold*int(customers))
 
     # Load DataSets; Outage and Weather DataSets
     df_outage_data = pd.read_parquet(f'outage_data//{state}//{county}//Merged_Cleaned_data_{start}_{end}_{county}_{state}.parquet')
     df_weather_data = pd.read_parquet(f'weather_data/{state}/cleaned_weather_data_{county}.parquet')
 
+    if approach=='percentile':
+        event_detector=df_outage_data['sum'].quantile(value)
+        print(f'Using percentile based event detection: Events defined '
+              f'as those greater than {event_detector} customers.')
+    elif approach=='percent_customers':
+        event_detector=round(value*int(customers))
+        print(f'Defining events as a percent of customers in the county out: Events defined '
+              f'as those greater than {event_detector} customers.')
+    elif approach=='flat':
+        event_detector=value
+        print(f'Defining events as a flat value: Events defined '
+              f'as those greater than {event_detector} customers.')
+    else:
+        print('Invalid event detection method. Using a flat 100 customers as event definition.')
+        event_detector=100
 
     # Change the datetime
     df_weather_data['DATE'] = pd.to_datetime(df_weather_data['valid'])
@@ -50,7 +64,7 @@ def main(state, county, start, end, pct_threshold):
     #df_weather_data['poccurence'] = pd.to_numeric(df_weather_data['poccurence'],errors = 'coerce').astype(float)
     #print(df_weather_data.head())
 
-    df_outage_data['sum'] = df_outage_data['sum'].apply(lambda x: 0 if x < threshold else x)  # Apply threshold
+    df_outage_data['sum'] = df_outage_data['sum'].apply(lambda x: 0 if x < event_detector else x)  # Apply threshold
     df_outage_data['N_sum'] = df_outage_data['sum'] / customers  # Normalize
 
     # Find zero index dates in the outage data
@@ -70,19 +84,20 @@ def main(state, county, start, end, pct_threshold):
 
         # Extract weather data for the zero outage period
         max_ws = df_weather_data['sknt'].loc[zero_index_weather:zero_index_weather].max()
+        avg_ws = df_weather_data['sknt'].loc[zero_index_weather:zero_index_weather].mean()
+
         max_g = df_weather_data['gust'].loc[zero_index_weather:zero_index_weather].max()
+        avg_g = df_weather_data['gust'].loc[zero_index_weather:zero_index_weather].mean()
+
         pp_sum = df_weather_data['p01i'].loc[zero_index_weather:zero_index_weather].sum()
+
+        max_tmpf = df_weather_data['tmpf'].loc[zero_index_weather:zero_index_weather].max()
+        min_tmpf = df_weather_data['tmpf'].loc[zero_index_weather:zero_index_weather].min()
+        avg_tmpf = df_weather_data['tmpf'].loc[zero_index_weather:zero_index_weather].mean()
+
         year=df_weather_data['DATE'].loc[zero_index_weather].year
         month=df_weather_data['DATE'].loc[zero_index_weather].month
         day=df_weather_data['DATE'].loc[zero_index_weather].day
-     #  pocc = df_weather_data['poccurence'].loc[zero_index_weather:zero_index_weather].max()
-       # max_dirct = df_weather_data['drct'].loc[zero_index_weather:zero_index_weather].max()
-       # max_dwpf = df_weather_data['dwpf'].loc[zero_index_weather:zero_index_weather].max()
-        max_tmpf = df_weather_data['tmpf'].loc[zero_index_weather:zero_index_weather].max()
-        min_tmpf = df_weather_data['tmpf'].loc[zero_index_weather:zero_index_weather].min()
-       # max_mslp = df_weather_data['mslp'].loc[zero_index_weather:zero_index_weather].max()
-       # max_relh = df_weather_data['relh'].loc[zero_index_weather:zero_index_weather].max()
-
 
 
         # Append to no_outage_list
@@ -91,24 +106,22 @@ def main(state, county, start, end, pct_threshold):
             'out_duration_max': 0,
             'area_cost_out_h': 0,
             'area_KW_h': 0,
-            'wind_speed': max_ws,
+            'max_wind_speed': max_ws,
+            'avg_wind_speed': avg_ws,
             'impact_time': 0,
             'outage_slope': 0,
             'recovery_duration': 0,
             'recovery_slope': 0,
             'cust_normalized': 0,
-            'gust': max_g,
+            'max_gust': max_g,
+            'avg_gust': avg_g,
             'precipitation': pp_sum,
-            #'ppocc': pocc,
-           # 'wind_direction':max_dirct,
-           # 'dew_point_temp': max_dwpf,
-            'Air_temp': max_tmpf,
+            'Air_temp_max': max_tmpf,
             'Air_temp_min': min_tmpf,
+            'Air_temp_avg': avg_tmpf,
             'year':year,
             'month':month,
             'day':day,
-           # 'Pressure': max_mslp,
-           # 'RH':max_relh,
             'cummulative_customer_out' : 0
 
 
@@ -184,17 +197,17 @@ def main(state, county, start, end, pct_threshold):
 
                 # Now use loc for slicing weather data for the current event
                 max_ws = df_weather_data['sknt'].loc[first_zero_index_weather:second_zero_index_weather].max()
-                #max_T = df_weather_data['T'].loc[first_zero_index_weather:second_zero_index_weather].max()
-                #min_T = df_weather_data['T'].loc[first_zero_index_weather:second_zero_index_weather].min()
+                avg_ws = df_weather_data['sknt'].loc[first_zero_index_weather:second_zero_index_weather].mean()
+
                 max_g = df_weather_data['gust'].loc[first_zero_index_weather:second_zero_index_weather].max()
+                avg_g = df_weather_data['gust'].loc[first_zero_index_weather:second_zero_index_weather].mean()
+
                 pp_sum = df_weather_data['p01i'].loc[first_zero_index_weather:second_zero_index_weather].sum()
-                #pocc = df_weather_data['poccurence'].loc[first_zero_index_weather:second_zero_index_weather].max()
-                #max_dirct = df_weather_data['drct'].loc[first_zero_index_weather:second_zero_index_weather].max()
-                #max_dwpf = df_weather_data['dwpf'].loc[first_zero_index_weather:second_zero_index_weather].max()
+
                 max_tmpf = df_weather_data['tmpf'].loc[first_zero_index_weather:second_zero_index_weather].max()
                 min_tmpf = df_weather_data['tmpf'].loc[first_zero_index_weather:second_zero_index_weather].min()
-                #max_mslp = df_weather_data['mslp'].loc[first_zero_index_weather:second_zero_index_weather].max()
-                #max_relh = df_weather_data['relh'].loc[first_zero_index_weather:second_zero_index_weather].max()
+                avg_tmpf = df_weather_data['tmpf'].loc[first_zero_index_weather:second_zero_index_weather].mean()
+
                 year = df_weather_data['DATE'].loc[first_zero_index_weather].year
                 month = df_weather_data['DATE'].loc[first_zero_index_weather].month
                 day = df_weather_data['DATE'].loc[first_zero_index_weather].day
@@ -204,26 +217,22 @@ def main(state, county, start, end, pct_threshold):
                     'out_duration_max': out_duration_max,
                     'area_cost_out_h': area_cost_out,
                     'area_KW_h': area_KW_h,
-                    'wind_speed': max_ws,
+                    'max_wind_speed': max_ws,
+                    'avg_wind_speed': avg_ws,
                     'impact_time': impact_time,
                     'outage_slope': outage_slope,
                     'recovery_duration': recovery_duration,
                     'recovery_slope': recovery_slope,
                     'cust_normalized': cust_normalized,
-                    #'Maximum_Temperature(degree)': max_T,
-                    #'Minimum_Temperature(degree)': min_T,
-                    'gust':max_g,
+                    'max_gust':max_g,
+                    'avg_gust':avg_g,
                     'precipitation':pp_sum,
                     'year': year,
                     'month': month,
                     'day': day,
-                    #'ppocc':pocc,
-                    #'wind_direction':max_dirct,
-                    #'dew_point_temp': max_dwpf,
-                    'Air_temp': max_tmpf,
+                    'Air_temp_max': max_tmpf,
                     'Air_temp_min': min_tmpf,
-                    #'Pressure': max_mslp,
-                    #'RH':max_relh,
+                    'Air_temp_avg': avg_tmpf,
                     'cummulative_customer_out' : cummulative_customer_out_max
 
 
@@ -234,12 +243,12 @@ def main(state, county, start, end, pct_threshold):
     # Convert event data list to DataFrame and save
     print("Saving outage and non-outage events to parquet.")
     event_df = pd.DataFrame(event_data_list)
-    event_df.to_parquet(f'Results/Outage_Events_Summary_All_{county}_{pct_threshold}_{start}-{end}.parquet', index=False)
+    event_df.to_parquet(f'Results/Outage_Events_Summary_All_{county}_{approach}_{value}_{start}-{end}.parquet', index=False)
     #print(event_df.head())
     #print(no_outage_df.head())
     analysis_df = pd.concat([event_df, no_outage_df], ignore_index= True)
     #print(analysis_df.head())
-    analysis_df.to_parquet(f'Results/Data_All_{county}_{pct_threshold}_{start}-{end}.parquet',index = False)
+    analysis_df.to_parquet(f'Results/Data_All_{county}_{approach}_{value}_{start}-{end}.parquet',index = False)
 
 
 # Example
