@@ -119,9 +119,8 @@ def main(state, county, start, end, value, approach):
             'Air_temp_max': max_tmpf,
             'Air_temp_min': min_tmpf,
             'Air_temp_avg': avg_tmpf,
-            'year':year,
-            'month':month,
-            'day':day,
+            'start_datetime': df_weather_data['DATE'].loc[zero_index_weather],
+            'end_datetime': df_weather_data['DATE'].loc[zero_index_weather],
             'cummulative_customer_out' : 0
 
 
@@ -208,10 +207,6 @@ def main(state, county, start, end, value, approach):
                 min_tmpf = df_weather_data['tmpf'].loc[first_zero_index_weather:second_zero_index_weather].min()
                 avg_tmpf = df_weather_data['tmpf'].loc[first_zero_index_weather:second_zero_index_weather].mean()
 
-                year = df_weather_data['DATE'].loc[first_zero_index_weather].year
-                month = df_weather_data['DATE'].loc[first_zero_index_weather].month
-                day = df_weather_data['DATE'].loc[first_zero_index_weather].day
-
                 event_data = {
                     'cust_out_max': cust_out_max,
                     'out_duration_max': out_duration_max,
@@ -227,9 +222,8 @@ def main(state, county, start, end, value, approach):
                     'max_gust':max_g,
                     'avg_gust':avg_g,
                     'precipitation':pp_sum,
-                    'year': year,
-                    'month': month,
-                    'day': day,
+                    'start_datetime': df_weather_data['DATE'].loc[first_zero_index_weather],
+                    'end_datetime': df_weather_data['DATE'].loc[second_zero_index_weather],
                     'Air_temp_max': max_tmpf,
                     'Air_temp_min': min_tmpf,
                     'Air_temp_avg': avg_tmpf,

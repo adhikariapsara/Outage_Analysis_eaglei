@@ -29,6 +29,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib.ticker import ScalarFormatter
 from matplotlib.ticker import FuncFormatter
+from matplotlib.patches import Patch
 import seaborn as sns
 from datetime import timedelta
 import networkx as nx
@@ -38,8 +39,9 @@ from urllib.request import urlopen
 from matplotlib.backends.backend_pdf import PdfPages
 import plotly.graph_objects as go
 import plotly.express as px
+import plotly.figure_factory as ff
 
-from . import constants
+import constants
 from pandas.api.types import is_datetime64_any_dtype
 
 
@@ -1540,6 +1542,82 @@ def plot_multiple_eaglei_performance_curves(outage_df: pd.DataFrame,
     plt.show()
     # return fig
 
+
+def plot_counties_by_year(year):
+    """
+    Plots all counties on U.S. map detected in the EAGLE-I dataset for a given year.
+
+    Parameters:
+    - year: year of available eagle-i data by county
+    """
+
+    # read data
+    eagle_i_data=pd.read_csv(f'../../Eagle-idatasets/eaglei_outages_{year}.csv')
+    # find all unique FIPS codes in the year of eagle-i data
+    list_of_fips_codes=np.array(np.unique(eagle_i_data['fips_code']))
+    # Load US counties shapefile
+    counties = gpd.read_file(
+        "https://www2.census.gov/geo/tiger/GENZ2022/shp/cb_2022_us_county_20m.zip"
+    )
+    states = gpd.read_file(
+        "https://www2.census.gov/geo/tiger/GENZ2022/shp/cb_2022_us_state_20m.zip"
+    )
+    states = states.to_crs(counties.crs)
+
+    # Create full FIPS code
+    counties["FIPS"] = counties["STATEFP"] + counties["COUNTYFP"]
+    counties['FIPS_int'] = counties['FIPS'].astype(int)
+    counties["is_true"] = counties["FIPS_int"].isin(list_of_fips_codes)
+
+    CONUS_STATEFPS = [
+        "01", "04", "05", "06", "08", "09", "10", "11", "12", "13", "16", "17", "18", "19",
+        "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32", "33",
+        "34", "35", "36", "37", "38", "39", "40", "41", "42", "44", "45", "46", "47", "48",
+        "49", "50", "51", "53", "54", "55", "56"
+    ]
+
+    counties = counties[counties["STATEFP"].isin(CONUS_STATEFPS)]
+    states = states[states["STATEFP"].isin(CONUS_STATEFPS)]
+
+    fig, ax = plt.subplots(1, 1, figsize=(15, 10))
+    counties["color"] = counties["is_true"].map({
+        True: "green",
+        False: "red"
+    })
+
+    counties.plot(
+        ax=ax,
+        color=counties["color"],
+        linewidth=0.1,
+        edgecolor="white"
+    )
+    states.boundary.plot(
+        ax=ax,
+        linewidth=1.2,
+        edgecolor="black"
+    )
+
+    xmin, ymin, xmax, ymax = states.total_bounds
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
+    ax.set_aspect("equal")
+
+    legend_elements = [
+        Patch(facecolor="green", edgecolor="black", label="Supported by EAGLE-I"),
+        Patch(facecolor="red", edgecolor="black", label="Not Supported by EAGLE-I")
+    ]
+
+    ax.legend(
+        handles=legend_elements,
+        # loc="lower left",
+        title="EAGLE-I Status per County",
+        frameon=True
+    )
+    ax.set_title(f"US Counties Supported by EAGLE-I, {year}")
+    ax.axis("off")
+    plt.savefig(f'../../Eagle-idatasets/eaglei_outages_{year}_county_coverage.png')
+
+#plot_counties_by_year(2024)
 
 # ------------------------- Identifying Issues in County Data -------------------------
 

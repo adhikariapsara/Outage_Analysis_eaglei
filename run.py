@@ -13,14 +13,16 @@ import fetch_weather_data
 import map_outage_weather
 import os
 
-state="Illinois"
-county='Cook'
+state="Florida"
+county='Miami-Dade'
 start=2018
 end=2024
 # APPROACH FOR EVENT DETECTION: Can use percent_customers, percentile, or flat
 approach='percentile'
-# Value dictates the event detection number. If flat, this is in units of num customers
-# If threshold, this is a fraction. If percentile, this is a decimal representing said percentile
+# Value dictates the event detection number.
+    # If flat, this is in units of num customers
+    # If percent, this is a decimal representing fraction of customers in county.
+    # If percentile, this is a decimal representing said percentile
 value=0.75
 
 

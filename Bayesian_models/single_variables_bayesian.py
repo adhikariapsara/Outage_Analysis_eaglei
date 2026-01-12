@@ -7,20 +7,22 @@ import arviz as az
 # inputs
 state='Illinois'
 county='Cook'
+color='black'
 start='2018'
 end='2024'
-threshold=0.0001
+approach='percentile'
+value=0.75
 # target variables: wind_speed, gust, precipitation, Air_temp, Air_temp_min
 target_variable='max_gust'
 
 #load datasets
-df = pd.read_parquet(f'../Results/Outage_Events_Summary_All_{county}_{threshold}_{start}-{end}.parquet')
+df = pd.read_parquet(f'../Results/Outage_Events_Summary_All_{county}_{approach}_{value}_{start}-{end}.parquet')
 print(df.head())
 print(df.columns)
 
 
 df = df[df['max_gust']<60]
-df[target_variable] = (df[target_variable] ).round()
+df[target_variable] = (df[target_variable]).round()
 
 # average all outage instances over their target weather variable
 df_gust = df.groupby(target_variable).agg({
@@ -71,8 +73,8 @@ mean_cust,  std_cust  = fit_loglinear(df_gust['cust_normalized'])
 fig, axes = plt.subplots(2, 1, figsize=(8, 12), sharex=True)
 
 panels = [
-    ('Area Under Curve',      df_gust['area_cost_out_h'],   mean_auc,   std_auc,   'C0'),
-    ('Customer Out(%) ',   df_gust['cust_normalized'],      mean_cust,  std_cust,  'C1'),
+    ('Area Under Curve',      df_gust['area_cost_out_h'],   mean_auc,   std_auc,   color),
+    ('Customer Out(%) ',   df_gust['cust_normalized'],      mean_cust,  std_cust,  color),
     
 ]
 

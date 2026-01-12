@@ -4,7 +4,8 @@ from scipy.stats import lognorm
 import numpy as np
 from scipy.optimize import curve_fit
 from scipy.integrate import simpson
-#plt.style.use('classic')
+import math
+plt.style.use('classic')
 
 
 
@@ -34,7 +35,7 @@ def bimodal(x,mu1,sigma1,A1,mu2,sigma2,A2):
 def plot_weather_distribution(weather_data, weather_param, county, state, double_peak):
     weather_data[weather_param].drop(0, inplace=True)
     weather_data[weather_param].fillna(1e-3, inplace=True)
-    y, x, _ = plt.hist(weather_data[weather_param], bins=np.linspace(20,120,60), color='skyblue', edgecolor='black',
+    y, x, _ = plt.hist(weather_data[weather_param], bins=np.linspace(0,100,100), color='skyblue', edgecolor='black',
                        label='Histogram')
     # n is y-value of normalized distribution (frequency), bins is x value (wind speed)
     y = np.append(y, 0)
@@ -55,7 +56,7 @@ def plot_weather_distribution(weather_data, weather_param, county, state, double
     # Generate fitted curve
     area = simpson(y_fit, x_fit)
     print("Area under fitted PDF:", area)
-    #np.savetxt(f'data/parsed/{state}_{county}_{weather_param}_profile_params.txt', params)
+    np.savetxt(f'weather_profiles/{state}_{county}_{weather_param}_profile_params.txt', params)
     plt.plot(x, y_pdf, 'bo', label='Raw Binned Data')
     plt.plot(x_fit, y_fit, 'r-', label='Fitted PDF')
     wind_profile = pd.DataFrame(columns=[x_fit, y_fit]).transpose()
@@ -92,6 +93,35 @@ def plot_multiple_wind_profiles(target_variable):
     plt.tight_layout()
     plt.show()
 
+def plot_multiple_bayesian_fits(target_variable):
+
+    fit_WA=pd.read_csv(f'exp_fit/Washington_King_Customer Out(%) _{target_variable}_fit.csv')
+    fit_MA=pd.read_csv(f'exp_fit/Massachusetts_Suffolk_Customer Out(%) _{target_variable}_fit.csv')
+    fit_CA=pd.read_csv(f'exp_fit/California_Los Angeles_Customer Out(%) _{target_variable}_fit.csv')
+    fit_FL=pd.read_csv(f'exp_fit/Florida_Miami-Dade_Customer Out(%) _{target_variable}_fit.csv')
+    fit_AZ=pd.read_csv(f'exp_fit/Arizona_Maricopa_Customer Out(%) _{target_variable}_fit.csv')
+    fit_TX=pd.read_csv(f'exp_fit/Texas_Harris_Customer Out(%) _{target_variable}_fit.csv')
+    fit_IL=pd.read_csv(f'exp_fit/Illinois_Cook_Customer Out(%) _{target_variable}_fit.csv')
+
+    plt.plot(fit_WA[target_variable],fit_WA['y_avg'],label='King County WA')
+    plt.plot(fit_MA[target_variable], fit_MA['y_avg'], label='Suffolk County MA')
+    plt.plot(fit_CA[target_variable], fit_CA['y_avg'], label='LA County CA')
+    plt.plot(fit_FL[target_variable], fit_FL['y_avg'], label='Miami-Dade County FL')
+    plt.plot(fit_AZ[target_variable], fit_AZ['y_avg'], label='Maricopa County AZ')
+    plt.plot(fit_TX[target_variable], fit_TX['y_avg'], label='Harris County TX')
+    plt.plot(fit_IL[target_variable], fit_IL['y_avg'], label='Cook County IL')
+    plt.xlabel('Max Wind Gust (MPH)')
+    plt.ylabel('Pct Customers Out')
+    plt.legend(loc='center left', bbox_to_anchor=(1.05, 0.5))
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+    breakpoint()
+
+def plot_multiple_outage_probabilities(target_variable):
+    breakpoint()
+
 def myround(x, base=1):
     return base * round(x/base)
 
@@ -100,42 +130,137 @@ def sigmoid(x, w0, k):
     # y = 1 / (k * np.sqrt(2 * 3.14) * np.exp(-1*0.5 * ((x - w0) / k) ** 2))
     return y
 
-def fit_outage_probability(weather_outage,target_variable):
-    weather_outage['outage'] = 0
-    for i in weather_outage.index:
-        if weather_outage.loc[i, 'cust_out_max'] > 0:
-            weather_outage.loc[i, 'outage'] = 1
+def fit_outage_probability(weather_outage,target_variable,state,county,color):
+
 
     weather_outage[target_variable] = (weather_outage[target_variable]).round()
     weather_outage = (weather_outage.groupby([target_variable], as_index=False)['outage'].mean())
 
     x=weather_outage[target_variable]
     y=weather_outage['outage']
-    plt.scatter(x,y, label='Raw Binned Data')
+    plt.scatter(x,y, label='Raw Binned Data',color=color)
 
     mask = y == 0
     y[mask] = 1e-15
-    popt, pcov = curve_fit(sigmoid,x, y,p0=[40,0.01])
-    plt.plot(weather_outage[target_variable], sigmoid(weather_outage[target_variable], *popt), 'r-', label="Fitted Curve")
+    popt, pcov = curve_fit(sigmoid,x, y,p0=[80,0.1])
+    plt.plot(weather_outage[target_variable], sigmoid(weather_outage[target_variable], *popt), 'r-', label="Fitted Curve",color=color)
 
     plt.xlabel(target_variable)
     plt.ylabel('Probability of Outage')
+    plt.xlim(0,120)
+    plt.ylim(0,1)
+    plt.title(f'Outage Probability Curve for {county} County, {state}')
     plt.grid(True)
-    plt.show()
+
+    w0 = popt[0]
+    k = popt[1]
+    x_fit = np.linspace(-20, 130, 150)
+    y_fit = sigmoid(x_fit, w0, k)
+    # Calculate errors
+    y_pred=sigmoid(x,*popt)
+    mse = np.mean(np.abs(y- y_pred) ** 2)
+    rmse = np.sqrt(mse)
+    mae = np.mean(np.abs((y - y_pred)))
+    print(f'MSE: {mse}, RMSE: {rmse}, MAE: {mae}')
+
+    plt.savefig(f'exp_fit/{state}_{county}_{target_variable}_outage_probability.png')
+    np.savetxt(f'exp_fit/{state}_{county}_{target_variable}_outage_probability.csv', [x_fit, y_fit], delimiter=',')
+
+
+def plot_event_profile(data, wind_prob_map, location, zone_id, var_y, cvar):
+    fig, ax = plt.subplots()
+    ax.plot(wind_prob_map[0], wind_prob_map[1])
+    # make wind speed labels = actual wind speed using some kind of interpolation
+    wind_speed_labels = list([20,40,60,80])
+    x_labels = list()
+    for i in wind_speed_labels:
+        # interpolate the numbers
+        y = data.loc[i, 'Loss (KWh)']
+        x_labels.append(y)
+    #x_labels[0] = 0
+    x_labels = ['%.2f' % elem for elem in x_labels]
+    # plt.xticks(wind_speed_labels, labels=x_labels)
+    sec = ax.secondary_xaxis(location=1)
+    sec.set_xlabel('Load Loss (KWh)')
+    sec.set_xticks(wind_speed_labels, labels=x_labels)
+    # for i, label in enumerate(wind_speed_labels):
+    #     plt.text(wind_prob_map[0,i], wind_prob_map[1,i] - 5, label, ha='center', va='top', fontsize=8, color='gray')
+    plt.xlabel('Wind Speed (MPH)')
+    plt.ylabel('Probability')
+    plt.axvline(location, color='red')
+    plt.figtext(s=f" VAR = {var_y} KWh", x=0.4, y=0.8)
+    plt.figtext(s=f" CVAR = {CVAR} KWh", x=0.4, y=0.75)
+    plt.fill_between(x=wind_prob_map[0], y1=wind_prob_map[1], where=(wind_prob_map[0] >= location), color="b",
+                     alpha=0.2)
+    # plt.title(f'Load Loss Distribution under Extreme Events Profile')
+    plt.savefig(f'plot/VAR_FEEDER_{zone_id}')
+    plt.close()
+
+def calculate_VAR_CVAR(state, county, target_variable):
+
+    # download weather profile
+    weather_profile=pd.read_csv(f'weather_profiles/{state}_{county}_{target_variable}_profile.csv',
+                                names=[target_variable,'probability'])
+    # download Bayesian Fit
+    bayesian_results=pd.read_csv(f'exp_fit/{state}_{county}_Customer Out(%) _max_{target_variable}_fit.csv')
+
+    params=[]
+    with open(f'weather_profiles/{state}_{county}_{target_variable}_profile_params.txt', 'r') as file:
+        for line in file:
+            params.extend([float(num) for num in line.split()])
+
+    shape,scale=params
+    loc=0
+    location = lognorm.ppf(0.95, shape, loc=loc, scale=scale)
+
+    print("95th percentile Wind Speed:", location)
+    # interpolate for var
+    x1 = math.floor(location)
+    x2 = math.ceil(location)
+    y1 = (bayesian_results.loc[x1, 'Percent Customer Out'])
+    y2 = (bayesian_results.loc[x2, 'Percent Customer Out'])
+    VAR = y1 + (y2 - y1) / (x2 - x1) * (location - x1)
+    VAR = math.ceil(VAR * 100) / 100
+    wind_speed_labels = list(wind_prob_map[0])
+    x_labels = list()
+    for i in wind_speed_labels:
+        # interpolate the numbers
+        if i>80:
+            val=data.loc[80,'Loss (KWh)']
+        else:
+            x1 = math.floor(i)
+            x2 = math.ceil(i)
+            y1 = data.loc[x1, 'Loss (KWh)']
+            y2 = data.loc[x2, 'Loss (KWh)']
+            val = y1 + (y2 - y1) / (x2 - x1) * (i - x1)
+            if math.isnan(val):
+                val=0
+        x_labels.append(val)
+    x=np.array(x_labels)
+    y = np.array(wind_prob_map[1])
+    mask = x >= VAR
+    CVAR=(x[mask]*y[mask]).sum()*(1/(1-0.95))
+    CVAR = math.ceil(CVAR * 100) / 100
+    return VAR, location, CVAR
 
 # inputs - change as needed
-state='Washington'
-county='King'
+state='Massachusetts'
+county='Suffolk'
 start='2018'
 end='2024'
-threshold=0.001
+approach='percentile'
+color='green'
+value=0.75
+target_variable="gust"
 # read in data
-
-#weather_data=pd.read_parquet(f'../weather_data/{state}/cleaned_weather_data_{county}.parquet')
-weather_outage=pd.read_parquet(f'../Results/Data_All_{county}_{threshold}_{start}-{end}.parquet')
-# outage_events=(f'../Results/Outage_Events_Summary_All_{county}_{threshold}_{start}-{end}.parquet')
-target_variable="max_gust"
-fit_outage_probability(weather_outage,target_variable)
-#plot_multiple_wind_profiles(target_variable)
+calculate_VAR_CVAR(state, county, target_variable)
+weather_data=pd.read_parquet(f'../weather_data/{state}/cleaned_weather_data_{county}.parquet')
+# weather_outage=pd.read_parquet(f'../Results/Data_All_{county}_{approach}_{value}_{start}-{end}.parquet')
+# # outage_events=(f'../Results/Outage_Events_Summary_All_{county}_{threshold}_{start}-{end}.parquet')
+#
+# #weather_outage = weather_outage[weather_outage['max_gust']<70]
+# #plot_multiple_bayesian_fits(target_variable)
+# fit_outage_probability(weather_outage,target_variable,state,county,color)
+# #plot_multiple_wind_profiles(target_variable)
 #plot_weather_distribution(weather_data, target_variable, county, state, False)
 
