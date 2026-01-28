@@ -35,7 +35,7 @@ def bimodal(x,mu1,sigma1,A1,mu2,sigma2,A2):
 def plot_weather_distribution(weather_data, weather_param, county, state, double_peak):
     weather_data[weather_param].drop(0, inplace=True)
     weather_data[weather_param].fillna(1e-3, inplace=True)
-    y, x, _ = plt.hist(weather_data[weather_param], bins=np.linspace(0,100,100), color='skyblue', edgecolor='black',
+    y, x, _ = plt.hist(weather_data[weather_param], bins=np.linspace(0,120,121), color='skyblue', edgecolor='black',
                        label='Histogram')
     # n is y-value of normalized distribution (frequency), bins is x value (wind speed)
     y = np.append(y, 0)
@@ -45,12 +45,12 @@ def plot_weather_distribution(weather_data, weather_param, county, state, double
     y_pdf = y / (np.sum(y) * bin_width)
     if double_peak:
         # tweak guess values as needed
-        params, _ = curve_fit(bimodal, x, y_pdf, p0=(60,10,0.25,90,10,0.25))
-        x_fit = np.linspace(min(x), max(x), 100)
+        params, _ = curve_fit(bimodal, x, y_pdf, p0=(40,10,0.25,70,10,0.25))
+        x_fit = np.linspace(min(x), max(x), 120)
         y_fit = bimodal(x_fit, *params)
     else:
         params, _ = curve_fit(lognormal_pdf, x, y_pdf, p0=[1, np.mean(x)])
-        x_fit = np.linspace(min(x), max(x), 100)
+        x_fit = np.linspace(min(x), max(x), 121)
         y_fit = lognormal_pdf(x_fit, *params)
 
     # Generate fitted curve
@@ -93,15 +93,15 @@ def plot_multiple_wind_profiles(target_variable):
     plt.tight_layout()
     plt.show()
 
-def plot_multiple_bayesian_fits(target_variable):
+def plot_multiple_bayesian_fits(target_variable,target_output):
 
-    fit_WA=pd.read_csv(f'exp_fit/Washington_King_Customer Out(%) _{target_variable}_fit.csv')
-    fit_MA=pd.read_csv(f'exp_fit/Massachusetts_Suffolk_Customer Out(%) _{target_variable}_fit.csv')
-    fit_CA=pd.read_csv(f'exp_fit/California_Los Angeles_Customer Out(%) _{target_variable}_fit.csv')
-    fit_FL=pd.read_csv(f'exp_fit/Florida_Miami-Dade_Customer Out(%) _{target_variable}_fit.csv')
-    fit_AZ=pd.read_csv(f'exp_fit/Arizona_Maricopa_Customer Out(%) _{target_variable}_fit.csv')
-    fit_TX=pd.read_csv(f'exp_fit/Texas_Harris_Customer Out(%) _{target_variable}_fit.csv')
-    fit_IL=pd.read_csv(f'exp_fit/Illinois_Cook_Customer Out(%) _{target_variable}_fit.csv')
+    fit_WA=pd.read_csv(f'exp_fit/Washington_King_{target_output}_{target_variable}_fit.csv')
+    fit_MA=pd.read_csv(f'exp_fit/Massachusetts_Suffolk_{target_output}_{target_variable}_fit.csv')
+    fit_CA=pd.read_csv(f'exp_fit/California_Los Angeles_{target_output}_{target_variable}_fit.csv')
+    fit_FL=pd.read_csv(f'exp_fit/Florida_Miami-Dade_{target_output}_{target_variable}_fit.csv')
+    fit_AZ=pd.read_csv(f'exp_fit/Arizona_Maricopa_{target_output}_{target_variable}_fit.csv')
+    fit_TX=pd.read_csv(f'exp_fit/Texas_Harris_{target_output}_{target_variable}_fit.csv')
+    fit_IL=pd.read_csv(f'exp_fit/Illinois_Cook_{target_output}_{target_variable}_fit.csv')
 
     plt.plot(fit_WA[target_variable],fit_WA['y_avg'],label='King County WA')
     plt.plot(fit_MA[target_variable], fit_MA['y_avg'], label='Suffolk County MA')
@@ -111,7 +111,7 @@ def plot_multiple_bayesian_fits(target_variable):
     plt.plot(fit_TX[target_variable], fit_TX['y_avg'], label='Harris County TX')
     plt.plot(fit_IL[target_variable], fit_IL['y_avg'], label='Cook County IL')
     plt.xlabel('Max Wind Gust (MPH)')
-    plt.ylabel('Pct Customers Out')
+    plt.ylabel('Customers Out')
     plt.legend(loc='center left', bbox_to_anchor=(1.05, 0.5))
     plt.grid(True)
     plt.tight_layout()
@@ -167,100 +167,120 @@ def fit_outage_probability(weather_outage,target_variable,state,county,color):
     np.savetxt(f'exp_fit/{state}_{county}_{target_variable}_outage_probability.csv', [x_fit, y_fit], delimiter=',')
 
 
-def plot_event_profile(data, wind_prob_map, location, zone_id, var_y, cvar):
-    fig, ax = plt.subplots()
-    ax.plot(wind_prob_map[0], wind_prob_map[1])
-    # make wind speed labels = actual wind speed using some kind of interpolation
-    wind_speed_labels = list([20,40,60,80])
-    x_labels = list()
-    for i in wind_speed_labels:
-        # interpolate the numbers
-        y = data.loc[i, 'Loss (KWh)']
-        x_labels.append(y)
-    #x_labels[0] = 0
-    x_labels = ['%.2f' % elem for elem in x_labels]
-    # plt.xticks(wind_speed_labels, labels=x_labels)
-    sec = ax.secondary_xaxis(location=1)
-    sec.set_xlabel('Load Loss (KWh)')
-    sec.set_xticks(wind_speed_labels, labels=x_labels)
-    # for i, label in enumerate(wind_speed_labels):
-    #     plt.text(wind_prob_map[0,i], wind_prob_map[1,i] - 5, label, ha='center', va='top', fontsize=8, color='gray')
-    plt.xlabel('Wind Speed (MPH)')
-    plt.ylabel('Probability')
-    plt.axvline(location, color='red')
-    plt.figtext(s=f" VAR = {var_y} KWh", x=0.4, y=0.8)
-    plt.figtext(s=f" CVAR = {CVAR} KWh", x=0.4, y=0.75)
-    plt.fill_between(x=wind_prob_map[0], y1=wind_prob_map[1], where=(wind_prob_map[0] >= location), color="b",
-                     alpha=0.2)
-    # plt.title(f'Load Loss Distribution under Extreme Events Profile')
-    plt.savefig(f'plot/VAR_FEEDER_{zone_id}')
-    plt.close()
-
-def calculate_VAR_CVAR(state, county, target_variable):
-
+def plot_event_profile(location, state,county, color, var_y,target_variable,target_output):
     # download weather profile
-    weather_profile=pd.read_csv(f'weather_profiles/{state}_{county}_{target_variable}_profile.csv',
+    weather_profile=pd.read_csv(f'weather_profiles/{state}_{county}_tmpf_profile.csv',
                                 names=[target_variable,'probability'])
     # download Bayesian Fit
-    bayesian_results=pd.read_csv(f'exp_fit/{state}_{county}_Customer Out(%) _max_{target_variable}_fit.csv')
+    bayesian_results=pd.read_csv(f'exp_fit/{state}_{county}_{target_output}_{target_variable}_max_fit.csv')
+
+
+    fig, ax = plt.subplots()
+    ax.plot(weather_profile[target_variable], weather_profile['probability'],color=color)
+    # make wind speed labels = actual wind speed using some kind of interpolation
+    wind_speed_labels = list([70,80,90])
+    x_labels = list()
+    bayesian_results = bayesian_results.sort_values(f"{target_variable}_max")
+
+    for i in wind_speed_labels:
+        # interpolate the numbers
+        lower = bayesian_results[bayesian_results[f"{target_variable}_max"] <= i].iloc[-1]
+        upper = bayesian_results[bayesian_results[f"{target_variable}_max"] >= i].iloc[0]
+        x1, y1 = lower[f"{target_variable}_max"], lower['y_avg']
+        x2, y2 = upper[f"{target_variable}_max"], upper['y_avg']
+        y = y1 + (i - x1) * (y2 - y1) / (x2 - x1)
+        if np.isnan(y):
+            y=y1
+        x_labels.append(y)
+    x_labels = [round(x) for x in x_labels]
+    sec = ax.secondary_xaxis(location=1)
+    sec.set_xlabel('Customer Losses')
+    sec.set_xticks(wind_speed_labels, labels=x_labels)
+
+    plt.xlabel('Air Temperature')
+    plt.ylabel('Probability')
+    plt.axvline(location, color='gray')
+    plt.figtext(s=f" VAR = {var_y} Customers", x=0.4, y=0.8)
+    #plt.title(f'Event Profile Plot for {county} County, {state}')
+    plt.savefig(f'var_plots/var_{state}_{county}_{target_variable}')
+    plt.close()
+
+def get_customers_in_county(county,state):
+    # find number of customers in county
+    pdf = pd.read_csv('../Eagle-idatasets/MCC.csv')
+    county_to_fips=pd.read_csv('../Eagle-idatasets/county_fips_master.csv', encoding='latin')
+    ans=county_to_fips[county_to_fips['county_name']==f'{county} County']
+    ans=ans[ans['state_name']==state]
+    target_fips=ans['fips'].values[0]
+    pdf['County_FIPS']=pd.to_numeric(pdf['County_FIPS'], downcast='integer',errors='coerce')
+    result = pdf[pdf['County_FIPS'] == target_fips]
+    customers = result['Customers'].values[0]
+    return customers
+
+def calculate_VAR_CVAR(state, county, target_variable, target_output, type):
+
+    # download weather profile
+    weather_profile=pd.read_csv(f'weather_profiles/{state}_{county}_tmpf_profile.csv',
+                                names=[target_variable,'probability'])
+    # download Bayesian Fit
+    bayesian_results=pd.read_csv(f'exp_fit/{state}_{county}_{target_output}_{target_variable}_max_fit.csv')
 
     params=[]
-    with open(f'weather_profiles/{state}_{county}_{target_variable}_profile_params.txt', 'r') as file:
+    with open(f'weather_profiles/{state}_{county}_tmpf_profile_params.txt', 'r') as file:
         for line in file:
             params.extend([float(num) for num in line.split()])
 
-    shape,scale=params
-    loc=0
-    location = lognorm.ppf(0.95, shape, loc=loc, scale=scale)
+    # shape,scale=params
+    # loc=0
 
-    print("95th percentile Wind Speed:", location)
+    df_sorted = weather_profile.sort_values(target_variable)
+    # df_sorted["probability"] /= df_sorted["probability"].sum()
+    # df_sorted["cum_prob"] = df_sorted["probability"].cumsum()
+    # Compute cumulative probability
+    df_sorted["cum_prob"] = df_sorted["probability"].cumsum()
+    #Find wind speed where cumulative probability crosses 95%
+    location = df_sorted.loc[
+        df_sorted["cum_prob"] >= 0.95, target_variable
+    ].iloc[0]
+
+
+    #location = lognorm.ppf(0.95, shape, loc=loc, scale=scale)
+
+    print("95th percentile Weather:", location)
     # interpolate for var
-    x1 = math.floor(location)
-    x2 = math.ceil(location)
-    y1 = (bayesian_results.loc[x1, 'Percent Customer Out'])
-    y2 = (bayesian_results.loc[x2, 'Percent Customer Out'])
-    VAR = y1 + (y2 - y1) / (x2 - x1) * (location - x1)
+    df = bayesian_results.sort_values(f"{target_variable}_max")
+
+    lower = df[df[f"{target_variable}_max"] <= location].iloc[-1]
+    upper = df[df[f"{target_variable}_max"] >= location].iloc[0]
+    x1, y1 = lower[f"{target_variable}_max"], lower[type]
+    x2, y2 = upper[f"{target_variable}_max"], upper[type]
+
+    VAR = y1 + (location - x1) * (y2 - y1) / (x2 - x1)
     VAR = math.ceil(VAR * 100) / 100
-    wind_speed_labels = list(wind_prob_map[0])
-    x_labels = list()
-    for i in wind_speed_labels:
-        # interpolate the numbers
-        if i>80:
-            val=data.loc[80,'Loss (KWh)']
-        else:
-            x1 = math.floor(i)
-            x2 = math.ceil(i)
-            y1 = data.loc[x1, 'Loss (KWh)']
-            y2 = data.loc[x2, 'Loss (KWh)']
-            val = y1 + (y2 - y1) / (x2 - x1) * (i - x1)
-            if math.isnan(val):
-                val=0
-        x_labels.append(val)
-    x=np.array(x_labels)
-    y = np.array(wind_prob_map[1])
-    mask = x >= VAR
-    CVAR=(x[mask]*y[mask]).sum()*(1/(1-0.95))
-    CVAR = math.ceil(CVAR * 100) / 100
-    return VAR, location, CVAR
+    print(VAR)
+    VAR_norm=VAR/get_customers_in_county(county,state)
+    print(VAR_norm)
+    return VAR, location
 
 # inputs - change as needed
-state='Massachusetts'
-county='Suffolk'
+state='Illinois'
+county='Cook'
 start='2018'
 end='2024'
 approach='percentile'
-color='green'
+color='black'
 value=0.75
-target_variable="gust"
+target_variable="Air_temp"
 # read in data
-calculate_VAR_CVAR(state, county, target_variable)
-weather_data=pd.read_parquet(f'../weather_data/{state}/cleaned_weather_data_{county}.parquet')
+VAR, location = calculate_VAR_CVAR(state, county, target_variable,'cust_out_max','y_lower')
+plot_event_profile(location, state,county, color, VAR,target_variable,'cust_out_max')
+#weather_data=pd.read_parquet(f'../weather_data/{state}/cleaned_weather_data_{county}.parquet')
 # weather_outage=pd.read_parquet(f'../Results/Data_All_{county}_{approach}_{value}_{start}-{end}.parquet')
 # # outage_events=(f'../Results/Outage_Events_Summary_All_{county}_{threshold}_{start}-{end}.parquet')
 #
 # #weather_outage = weather_outage[weather_outage['max_gust']<70]
-# #plot_multiple_bayesian_fits(target_variable)
+#plot_multiple_bayesian_fits(target_variable,'cust_out_max')
 # fit_outage_probability(weather_outage,target_variable,state,county,color)
-# #plot_multiple_wind_profiles(target_variable)
-#plot_weather_distribution(weather_data, target_variable, county, state, False)
+#plot_multiple_wind_profiles(target_variable)
+#plot_weather_distribution(weather_data, target_variable, county, state, True)
 

@@ -4,36 +4,8 @@ import matplotlib.pyplot as plt
 import pymc as pm
 import arviz as az
 
-# inputs
-state='Illinois'
-county='Cook'
-color='black'
-start='2018'
-end='2024'
-approach='percentile'
-value=0.75
-# target variables: wind_speed, gust, precipitation, Air_temp, Air_temp_min
-target_variable='max_gust'
-
-#load datasets
-df = pd.read_parquet(f'../Results/Outage_Events_Summary_All_{county}_{approach}_{value}_{start}-{end}.parquet')
-print(df.head())
-print(df.columns)
-
-
-df = df[df['max_gust']<60]
-df[target_variable] = (df[target_variable]).round()
-
-# average all outage instances over their target weather variable
-df_gust = df.groupby(target_variable).agg({
-    
-    'area_cost_out_h': 'mean',
-    'cust_normalized':    'mean'
-   
-}).reset_index()
-
-x     = df_gust[target_variable].values
-x_new = np.linspace(x.min(), x.max(), 100)
+def myround(x, base):
+    return base * round(x/base)
 
 # 2) Helper to fit and predict
 def fit_loglinear(y_obs):
@@ -47,7 +19,7 @@ def fit_loglinear(y_obs):
         mu_log = a_log + b * x + c
         pm.Normal('y', mu=mu_log, sigma=sigma, observed=y_log)
 
-        trace = pm.sample(1000, tune=1000, chains=4, cores=1,
+        trace = pm.sample(1000, tune=1000, chains=2, cores=1,
                           target_accept=0.95,
                           random_seed=42, return_inferencedata=True)
 
@@ -64,48 +36,74 @@ def fit_loglinear(y_obs):
     return y_new.mean(axis=0), y_new.std(axis=0)
 
 
-# 3) Fit each series
-mean_auc,   std_auc   = fit_loglinear(df_gust['area_cost_out_h'])
-mean_cust,  std_cust  = fit_loglinear(df_gust['cust_normalized'])
+def plot(df, state, county, target_variable, target_output, color, mean, std):
+    # 4) Plot vertical subplots
+    #fig, axes = plt.subplots(2, 1, figsize=(8, 12), sharex=True)
 
+    panel = [
+        (target_output, df[target_output],   mean,   std,   color),
+    ]
 
-# 4) Plot vertical subplots
-fig, axes = plt.subplots(2, 1, figsize=(8, 12), sharex=True)
-
-panels = [
-    ('Area Under Curve',      df_gust['area_cost_out_h'],   mean_auc,   std_auc,   color),
-    ('Customer Out(%) ',   df_gust['cust_normalized'],      mean_cust,  std_cust,  color),
-    
-]
-
-for ax, (title, y_data, y_mean, y_std, color) in zip(axes, panels):
+  #  for ax, (title, y_data, y_mean, y_std, color) in zip(axes, panels):
     # raw data
-    ax.scatter(x, y_data, color=color, alpha=0.5, s=80,label='Observed Data')
+    plt.scatter(x, df[target_output], color=color, alpha=0.5, s=80,label='Observed Data')
     # posterior mean
-    ax.plot(   x_new, y_mean, color=color, lw=2, label='Predicted Mean')
+    plt.plot(   x_new, mean, color=color, lw=2, label='Predicted Mean')
     # 95% band
-    ax.fill_between(
+    plt.fill_between(
         x_new,
-        y_mean - 2*y_std,
-        y_mean + 2*y_std,
+        mean - 2*std,
+        mean + 2*std,
         color=color, alpha=0.2, label='95% CI (±2σ)'
     )
-    ax.set_ylabel(title, fontsize=18, fontweight='bold')
+    plt.ylabel(target_output, fontsize=18, fontweight='bold')
 #    ax.set_yscale('log')
-    ax.grid(True, linestyle='--', alpha=0.4)
-    ax.tick_params(axis='both', which='major', labelsize=14)
-    ax.legend(fontsize=16, loc='upper left')
+    plt.grid(True, linestyle='--', alpha=0.4)
+    plt.tick_params(axis='both', which='major', labelsize=14)
+    plt.legend(fontsize=16, loc='upper left')
     data_results = pd.DataFrame(columns=[target_variable, 'y_avg', 'y_lower', 'y_upper'])
     data_results[target_variable]=x_new
-    data_results['y_avg']=y_mean
-    data_results['y_lower']=y_mean - 2*y_std
-    data_results['y_upper']=y_mean + 2*y_std
-    data_results.to_csv(f'exp_fit/{state}_{county}_{title}_{target_variable}_fit.csv')
+    data_results['y_avg']=mean
+    data_results['y_lower']=mean - 2*std
+    data_results['y_upper']=mean + 2*std
+    data_results.to_csv(f'exp_fit/{state}_{county}_{target_output}_{target_variable}_fit.csv')
 
-axes[-1].set_xlabel(f'{target_variable}', fontsize=18, fontweight='bold')
-ax.tick_params(axis='both', which='major', labelsize=14)
-plt.xticks(fontsize=12)
-plt.tight_layout()
-#plt.show()
-plt.savefig(f'../Results/Bayesian_{target_variable}_{county}.png')
+    plt.xlabel(f'{target_variable}', fontsize=18, fontweight='bold')
+    plt.tick_params(axis='both', which='major', labelsize=14)
+    plt.xticks(fontsize=12)
+    plt.tight_layout()
+    #plt.show()
+    plt.savefig(f'../Results/Bayesian_{target_variable}_{target_output}_{county}.png')
 
+
+# inputs
+state = 'Arizona'
+county = 'Maricopa'
+color = 'magenta'
+start = '2018'
+end = '2024'
+approach = 'percentile'
+value = 0.75
+# target variables: gust_max, precipitation, Air_temp_max, Air_temp_min
+target_variable = 'Air_temp_max'
+# target outputs: cust_out_max, cust_normalized, area
+target_output = 'cust_out_max'
+
+# load datasets
+df = pd.read_parquet(f'../Results/Outage_Events_Summary_All_{county}_{approach}_{value}_{start}-{end}.parquet')
+print(df.head())
+print(df.columns)
+
+df = df[df['Air_temp_max'] > 60]
+df[target_variable] = myround(df[target_variable],base=1)
+# average all outage instances over their target weather variable
+df_grouped = df.groupby(target_variable).agg({
+    target_output: 'mean'
+}).reset_index()
+
+x = df_grouped[target_variable].values
+x_new = np.linspace(x.min(), x.max(), 100)
+
+# 3) Fit each series
+mean,  std  = fit_loglinear(df_grouped[target_output])
+plot(df_grouped, state, county, target_variable, target_output, color, mean, std)
