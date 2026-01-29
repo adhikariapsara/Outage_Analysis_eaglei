@@ -152,15 +152,21 @@ def create_netcdf_weather_stations(state, county, start_year, end_year, raw_data
         
         # Fill data for each station
         for i, station in enumerate(valid_stations):
+
+            # replace missing wind gust values with corresponding wind speed
+            if var == 'gust':
+                mask = weather_data[var] == 'M'
+                weather_data.loc[mask, var] = weather_data.loc[mask, 'sknt']
+
             station_data = weather_data[weather_data['station'] == station][['valid', var]].copy()
-            
+
             # Handle special replacements for precipitation
             if var == 'p01i':
                 station_data[var] = station_data[var].replace({'T': 0.001, 'M': 0})
-            
+
             # Convert to numeric
             station_data[var] = pd.to_numeric(station_data[var], errors='coerce')
-            
+
             # Remove duplicates, keeping max value
             station_data = station_data.sort_values(by=[var], ascending=False)
             station_data = station_data.groupby('valid').first().reset_index()
