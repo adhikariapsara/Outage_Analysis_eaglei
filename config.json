@@ -4,8 +4,8 @@
   "project_description": "Comprehensive outage and weather data processing pipeline for Eagle-I dataset analysis",
   
   "processing_parameters": {
-    "state": "Illinois",
-    "county": "Cook",
+    "state": "Washington",
+    "county": "Clallam",
     "start_year": 2014,
     "end_year": 2024
   },
@@ -16,8 +16,8 @@
     "max_gap_minutes": 1440,
     "use_auto_gap_rank_threshold": true,
     "gap_rank_threshold_quantile": 0.4,
-    "event_detection_approach": "percent_customers",
-    "events_customer_threshold": 0.001
+    "event_detection_approach": "flat",
+    "events_customer_threshold": 30
   },
 
   "processing_options": {
