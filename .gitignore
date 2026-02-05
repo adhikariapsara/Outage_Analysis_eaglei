@@ -4,6 +4,7 @@
 /merged_data/
 /results/
 /eagle-idatasets/eaglei_outages_*.csv
+/src/bayesian/results/
 
 
 # Environment and virtualenv files
