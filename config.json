@@ -4,8 +4,8 @@
   "project_description": "Comprehensive outage and weather data processing pipeline for Eagle-I dataset analysis",
   
   "processing_parameters": {
-    "state": "Washington",
-    "county": "Clallam",
+    "state": "Illinois",
+    "county": "DuPage",
     "start_year": 2014,
     "end_year": 2024
   },
@@ -16,8 +16,8 @@
     "max_gap_minutes": 1440,
     "use_auto_gap_rank_threshold": true,
     "gap_rank_threshold_quantile": 0.4,
-    "event_detection_approach": "flat",
-    "events_customer_threshold": 30
+    "event_detection_approach": "percent_customers",
+    "events_customer_threshold": 0.001
   },
 
   "processing_options": {
@@ -40,6 +40,7 @@
     "outage_data_dir": "outage_data",
     "weather_data_dir": "weather_data",
     "merged_data_dir": "merged_data",
+    "multi_county_data_dir": "multi_county_data",
     "results_dir": "results",
     "misc_dir": "misc"
   },
@@ -50,7 +51,8 @@
     "outage_file_pattern": "eaglei_outages_{year}.csv",
     "cleaned_outage_file_pattern": "cleaned_outage_{state}_{county}_{start}_{end}.parquet",
     "merged_file_pattern": "merged_data_{state}_{county}_{start}_{end}.nc",
-    "merged_result_file_pattern": "Outage_Events_Summary_All_{county}_{threshold}_{start}-{end}.csv"
+    "merged_result_file_pattern": "Outage_Events_Summary_All_{county}_{threshold}_{start}-{end}.csv",
+    "multi_county_data_file_pattern": "multi_county_data_{start}_{end}_{nCounties}_counties.nc"
   },
 
   "visualization_settings": {
@@ -61,5 +63,23 @@
   "logging": {
     "log_level": "INFO",
     "enable_console_logging": true
+  },
+
+  "multi_county_analysis_parameters": {
+    "state_county_pairs": [
+      {"state": "Illinois", "county": "DuPage"},
+      {"state": "Illinois", "county": "Cook"},
+      {"state": "Illinois", "county": "Lake"}
+    ]
+  },
+
+  "county_adjacency_changes": {
+    "add_edges": [
+      {"from_state": "Massachusetts", "from_county": "Dukes", "to_state": "Massachusetts", "to_county": "Barnstable"},
+      {"from_state": "Massachusetts", "from_county": "Dukes", "to_state": "Massachusetts", "to_county": "Nantucket"}
+    ],
+    "del_edges": [
+      {"from_state": "Washington", "from_county": "Pierce", "to_state": "Washington", "to_county": "Kittitas"}
+    ]
   }
 }

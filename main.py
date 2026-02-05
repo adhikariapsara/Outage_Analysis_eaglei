@@ -106,7 +106,7 @@ Examples:
     
     parser.add_argument(
         '--mode',
-        choices=['full', 'outage-only', 'weather-only', 'alignment-only'],
+        choices=['full', 'outage-only', 'weather-only', 'alignment-only', 'multi-county'],
         default='full',
         help='Pipeline execution mode (default: full)'
     )
@@ -194,7 +194,8 @@ def main() -> int:
             success = pipeline.run_weather_only()
         elif args.mode == "alignment-only":
             success = pipeline.run_alignment_only()
-        
+        elif args.mode == "multi-county":
+            success = pipeline.run_multi_county_analysis()
         return 0 if success else 1
     
     except KeyboardInterrupt:
