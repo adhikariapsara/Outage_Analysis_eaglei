@@ -61,3 +61,4 @@ config.local.json
 
 # OS specific
 Thumbs.db
+/dummy.py

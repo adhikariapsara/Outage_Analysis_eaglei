@@ -4442,6 +4442,18 @@ class EagleiCountyProcessor:
         self.event_stats_ac_thr = None
 
 
+    def data_quality_analysis(self,
+                              year: int = 2024):
+        # check if leap year
+        if (year % 400 == 0) or (year % 4 == 0 and year % 100 != 0):
+            expected_num_timestamps=366*24*4 # 366 days - 24 hr - 4 timestamps per hr
+        else:
+            expected_num_timestamps=365*24*4
+        # need to make this work per year
+        num_timestamps=len(self.customer_column)
+        DQI=num_timestamps/expected_num_timestamps
+        print(f"DQI: {DQI}")
+
     def identify_gaps(self, 
                       min_customers_before_gap: int = 10,
                       min_customers_after_gap: int = 2,
