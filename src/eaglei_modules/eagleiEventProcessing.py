@@ -1284,9 +1284,72 @@ def get_eaglei_processes(outage_df: pd.DataFrame,
     return outages, restores, performance_data
 
 
+def get_eaglei_spatiotemporal_processes(outage_df: pd.DataFrame,
+                         event_number: int,
+                         event_method: str = 'ac',
+                         timestamp_column: str = constants.TIMESTAMP_COL,
+                         customer_column: str = constants.CUSTOMERS_COL) -> Tuple[List, List, List]:
+    """
+    Function to get the outage, restore, and performance processes for a given spatiotemporal event number
+
+    Parameters:
+        outage_df: the outage data frame
+        event_number: the event number to get the processes for
+        event_method: the method used to extract the event number (default is 'ac')
+        timestamp_column: the name of the timestamp column (default is constants.TIMESTAMP_COL)
+        customer_column: the name of the customer column (default is constants.CUSTOMERS_COL)
+    Returns:
+        A tuple containing three lists:
+            - outages: list of tuples (timestamp, customers_out) for outages
+            - restores: list of tuples (timestamp, customers_restored) for restorations
+            - performance_data: list of tuples (timestamp, customers_out) for performance curve
+    """
+
+    event_column = f'event_number_{event_method}'
+    event_data = outage_df[outage_df[event_column] == event_number].copy()
+
+    event_data = event_data.sort_values(by=timestamp_column).reset_index(drop=True)
+    event_start_time = event_data[timestamp_column].min()
+    tau = timedelta(minutes=15)  # 15-minute intervals
+
+    # grouping for spatiotemporal
+    event_data = event_data.groupby(timestamp_column).agg({
+        customer_column:'sum',
+        event_column:'min',
+        'county':'sum'
+        }
+    ).reset_index()
+
+    # Create performance data as a list of tuples (timestamp, customers_out)
+    # Start with the event start time minus tau to include the first time step
+    # and end with the maximum timestamp plus tau to include the last time step
+    # This ensures we have a complete time series for the event
+    performance_data = [tuple(v) for v in event_data[[timestamp_column, customer_column]].values]
+    performance_data.insert(0, (event_start_time - tau, 0))  # Add 0 for the first time step
+    performance_data.append((event_data[timestamp_column].max() + tau, 0))  # Add 0 for the last time step
+
+    # Calculate the differences in customer outages between consecutive time steps
+    # This will give us the change in outages over each 15-minute interval
+    diffs = np.diff([v[1] for v in performance_data])
+    # Outages are positive changes
+    outages = [(event_start_time + (i * tau), v) for i, v in enumerate(diffs) if v > 0]
+    # Restorations are negative changes
+    restores = [(event_start_time + (i * tau), -v) for i, v in enumerate(diffs) if v < 0]
+
+    # Remove duplicate enties (based on customers out) in performance_data
+    # This is important to ensure that we have a unique time series for the event
+    indexes_to_remove = set()
+    for i in range(1, len(performance_data)):
+        if performance_data[i][1] == performance_data[i - 1][1]:
+            indexes_to_remove.add(i)
+    performance_data = [v for i, v in enumerate(performance_data) if i not in indexes_to_remove]
+
+    return outages, restores, performance_data
+
+
 def _get_eaglei_event_stats_single_event(eaglei_df: pd.DataFrame, 
-                                         event_number: int, 
-                                         event_method: str = 'ac', 
+                                         event_number: int,
+                                         event_method: str = 'ac',
                                          timestamp_column: str = constants.TIMESTAMP_COL, 
                                          customer_column: str = constants.CUSTOMERS_COL) -> Dict:
     """
@@ -1309,7 +1372,12 @@ def _get_eaglei_event_stats_single_event(eaglei_df: pd.DataFrame,
             - num_outages: the number of outages during the event
             - num_restores: the number of restores during the event
     """
-    outages, restores, performance_process = get_eaglei_processes(eaglei_df, event_number, event_method, timestamp_column, customer_column)
+    if "eaglei" in event_method.lower():
+        outages, restores, performance_process = get_eaglei_processes(eaglei_df, event_number, event_method,
+                                                                      timestamp_column, customer_column)
+    else:
+        outages, restores, performance_process = get_eaglei_spatiotemporal_processes(eaglei_df, event_number, event_method,
+                                                                                     timestamp_column, customer_column)
 
     if len(performance_process) == 0:
         print(f'No performance process found for event number {event_number}')

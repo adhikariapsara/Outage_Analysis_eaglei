@@ -5,7 +5,7 @@
 /results/
 /multi_county_data/
 /eagle-idatasets/eaglei_outages_*.csv
-
+/events_stats/
 
 # Environment and virtualenv files
 venv/
