@@ -19,7 +19,7 @@ def calculate_events_stats(dataset, event_threshold, event_type):
         .index
         .tolist()
     )
-    # drop any zero or 1 event numbers
+    # drop any 0 or -1 event numbers
     event_numbers = [e for e in event_numbers if e not in (0, -1)]
 
     # import the function to calculate EAGLEi event stats
