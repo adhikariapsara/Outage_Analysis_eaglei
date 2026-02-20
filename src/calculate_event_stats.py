@@ -60,7 +60,7 @@ ds_merged = xr.open_dataset(f'../multi_county_data/multi_county_data_2014_2024_1
 event_threshold=30
 state='Illinois'
 
-''' # CALCULATING EVENT STATS FOR EACH COUNTY
+'''# CALCULATING EVENT STATS FOR EACH COUNTY
 
 list_of_counties=list(ds_merged.counties.split(', '))
 events_stats_col = 'event_number_eaglei'
@@ -77,10 +77,9 @@ ds_merged["county"] = (
 
 for county in list_of_counties:
     ds_county = ds_merged.sel(county=county)
-    print(ds_county['customers_out'].head)
     events_stats = calculate_events_stats(ds_county, event_threshold, event_type)
     events_stats.to_parquet(f'{path}/{county}_event_stats.parquet')
-    
+
 '''
 
 # CALCULATING SPATIOTEMPORAL EVENT STATS
@@ -91,5 +90,6 @@ if not os.path.exists(path):
 events_stats = calculate_events_stats(ds_merged,event_threshold,event_type='mc_spatiotemporal')
 
 events_stats.to_parquet(f'{path}/event_stats_{state}.parquet')
+
 
 

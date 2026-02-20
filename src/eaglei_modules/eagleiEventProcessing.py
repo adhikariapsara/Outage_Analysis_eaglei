@@ -1375,9 +1375,22 @@ def _get_eaglei_event_stats_single_event(eaglei_df: pd.DataFrame,
     if "eaglei" in event_method.lower():
         outages, restores, performance_process = get_eaglei_processes(eaglei_df, event_number, event_method,
                                                                       timestamp_column, customer_column)
+        filtered = eaglei_df[eaglei_df[f'event_number_{event_method}'] == event_number]
+        counties=list(filtered['county_x'].unique())
+        if filtered["county_x"].nunique() > 1:
+            raise ValueError(
+                f"Multiple counties found for event {event_number}: {counties}. This requires spatiotemporal "
+                f"processing. Please set the correct event method for stats calculation."
+            )
     else:
-        outages, restores, performance_process = get_eaglei_spatiotemporal_processes(eaglei_df, event_number, event_method,
+        outages, restores, performance_process= get_eaglei_spatiotemporal_processes(eaglei_df, event_number, event_method,
                                                                                      timestamp_column, customer_column)
+        counties = set(
+            c
+            for _, row in eaglei_df[eaglei_df[f'event_number_{event_method}'] == event_number].iterrows()
+            for c in row["county"].split("Illinois") # to do: make generalizable to state
+            if c
+        )
 
     if len(performance_process) == 0:
         print(f'No performance process found for event number {event_number}')
@@ -1389,9 +1402,11 @@ def _get_eaglei_event_stats_single_event(eaglei_df: pd.DataFrame,
                 'total_customers_out': 0,
                 'num_outages': 0,
                 'num_restores': 0,
-                'customer_hours': 0
+                'customer_hours': 0,
+                'counties_affected' : None
                }
-    
+
+    counties = ', '.join(map(str, counties))
     start_time = performance_process[1][0]
     end_time = performance_process[-1][0]
     duration = (end_time - start_time).total_seconds() / 3600  # in hours
@@ -1416,7 +1431,8 @@ def _get_eaglei_event_stats_single_event(eaglei_df: pd.DataFrame,
         'total_customers_out': int(total_customers_out),
         'num_outages': num_outages,
         'num_restores': num_restores,
-        'customer_hours': customer_hours
+        'customer_hours': customer_hours,
+        'counties_affected': counties
     }
 
 
