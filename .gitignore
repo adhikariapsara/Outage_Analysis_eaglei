@@ -1,11 +1,11 @@
 # Data directories (large files)
-/weather_data/
-/outage_data/
-/merged_data/
-/results/
-/multi_county_data/
+weather_data/*
+outage_data/*
+merged_data/*
+results/*
+multi_county_data/*
+logs/*
 /eagle-idatasets/eaglei_outages_*.csv
-/events_stats/
 
 # Environment and virtualenv files
 venv/
@@ -46,8 +46,7 @@ wheels/
 *.sublime-workspace
 
 # Logs
-logs/
-*.log
+logs/*.log
 
 # Testing
 .pytest_cache/
