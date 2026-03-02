@@ -1376,8 +1376,8 @@ def _get_eaglei_event_stats_single_event(eaglei_df: pd.DataFrame,
         outages, restores, performance_process = get_eaglei_processes(eaglei_df, event_number, event_method,
                                                                       timestamp_column, customer_column)
         filtered = eaglei_df[eaglei_df[f'event_number_{event_method}'] == event_number]
-        counties=list(filtered['county_x'].unique())
-        if filtered["county_x"].nunique() > 1:
+        counties=list(filtered['county'].unique())
+        if filtered["county"].nunique() > 1:
             raise ValueError(
                 f"Multiple counties found for event {event_number}: {counties}. This requires spatiotemporal "
                 f"processing. Please set the correct event method for stats calculation."
