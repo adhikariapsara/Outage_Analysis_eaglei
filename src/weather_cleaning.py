@@ -153,10 +153,10 @@ def create_netcdf_weather_stations(state, county, start_year, end_year, raw_data
         # Fill data for each station
         for i, station in enumerate(valid_stations):
 
-            # Replace M wind gust values with the corresponding sknt
+            # Replace M wind gust values with 0
             if var=='gust':
                 mask = weather_data[var] == 'M'
-                weather_data.loc[mask, var] = weather_data.loc[mask, 'sknt']
+                weather_data.loc[mask, var] = 0
 
             station_data = weather_data[weather_data['station'] == station][['valid', var]].copy()
             
@@ -174,13 +174,10 @@ def create_netcdf_weather_stations(state, county, start_year, end_year, raw_data
             # Create a full time series for this station
             station_full = pd.DataFrame({'valid': full_time_range})
             station_full = station_full.merge(station_data, on='valid', how='left')
-            
             # Interpolate missing values
             station_full[var] = station_full[var].interpolate(method='nearest')
             station_full[var] = station_full[var].ffill()
             station_full[var] = station_full[var].bfill()
-
-
             # Fill the array
             var_array[:, i] = station_full[var].values
         
