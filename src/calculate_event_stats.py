@@ -26,15 +26,7 @@ def calculate_events_stats(dataset, event_threshold, event_type):
     # import the function to calculate EAGLEi event stats
     from src.eaglei_modules.eagleiEventProcessing import get_eaglei_event_stats
     events_stats = get_eaglei_event_stats(outage_df_non_zero, event_numbers, event_method=event_type,
-                                      timestamp_column='time')
-
-    # if event_type == 'eaglei':
-    #     # Filter stations containing that county
-    #     dataset = dataset.sel(
-    #         station=dataset.station.str.contains(f"Illinois{dataset.county.values}_")
-    #     )
-    # weather_df=dataset[['tmpf', 'sknt', 'gust', 'p01i']].max(dim='station').to_dataframe().reset_index()
-    # merged_df_non_zero = pd.merge(outage_df_non_zero, weather_df, on='time')
+                                      timestamp_column='time',counties=dataset.county)
 
     # append weather stats to the events_stats dataframe
     weather_stats_list = []
@@ -82,10 +74,14 @@ def calculate_events_stats(dataset, event_threshold, event_type):
 
 
 # dataset params
-ds_merged = xr.open_dataset(f'../multi_county_data/multi_county_data_2014_2024_102_counties.nc')
 event_threshold=30
 state='Illinois'
-
+county='Cook'
+# ds_merged = xr.open_dataset(f'../merged_data/{state}/merged_data_{state}_{county}_2014_2024.nc')
+# event_type='eaglei'
+# path = f'../events_stats/county_events/{state}'
+# events_stats = calculate_events_stats(ds_merged, event_threshold, event_type)
+# events_stats.to_parquet(f'{path}/{county}_event_stats.parquet')
 # CALCULATING EVENT STATS FOR EACH COUNTY
 #
 # list_of_counties=list(ds_merged.counties.split(', '))
@@ -110,9 +106,12 @@ state='Illinois'
 
 
 # CALCULATING SPATIOTEMPORAL EVENT STATS
+
 path = '../events_stats/spatiotemporal_events'
 if not os.path.exists(path):
     os.makedirs(path)
+
+ds_merged=xr.open_dataset(f'../multi_county_data/multi_county_data_2014_2024_102_counties.nc')
 
 events_stats = calculate_events_stats(ds_merged,event_threshold,event_type='mc_spatiotemporal')
 
