@@ -1351,7 +1351,8 @@ def _get_eaglei_event_stats_single_event(eaglei_df: pd.DataFrame,
                                          event_number: int,
                                          event_method: str = 'ac',
                                          timestamp_column: str = constants.TIMESTAMP_COL, 
-                                         customer_column: str = constants.CUSTOMERS_COL) -> Dict:
+                                         customer_column: str = constants.CUSTOMERS_COL,
+                                         counties: str = 'None') -> Dict:
     """
     Function to get the statistics of a given event number
     
@@ -1375,13 +1376,13 @@ def _get_eaglei_event_stats_single_event(eaglei_df: pd.DataFrame,
     if "eaglei" in event_method.lower():
         outages, restores, performance_process = get_eaglei_processes(eaglei_df, event_number, event_method,
                                                                       timestamp_column, customer_column)
-        filtered = eaglei_df[eaglei_df[f'event_number_{event_method}'] == event_number]
-        counties=list(filtered['county'].unique())
-        if filtered["county"].nunique() > 1:
-            raise ValueError(
-                f"Multiple counties found for event {event_number}: {counties}. This requires spatiotemporal "
-                f"processing. Please set the correct event method for stats calculation."
-            )
+        # filtered = eaglei_df[eaglei_df[f'event_number_{event_method}'] == event_number]
+        # counties=list(filtered['county'].unique())
+        # if filtered["county"].nunique() > 1:
+        #     raise ValueError(
+        #         f"Multiple counties found for event {event_number}: {counties}. This requires spatiotemporal "
+        #         f"processing. Please set the correct event method for stats calculation."
+        #     )
     else:
         outages, restores, performance_process= get_eaglei_spatiotemporal_processes(eaglei_df, event_number, event_method,
                                                                                      timestamp_column, customer_column)
@@ -1391,6 +1392,7 @@ def _get_eaglei_event_stats_single_event(eaglei_df: pd.DataFrame,
             for c in row["county"].split("Illinois") # to do: make generalizable to state
             if c
         )
+        counties = ', '.join(map(str, counties))
 
     if len(performance_process) == 0:
         print(f'No performance process found for event number {event_number}')
@@ -1406,7 +1408,6 @@ def _get_eaglei_event_stats_single_event(eaglei_df: pd.DataFrame,
                 'counties_affected' : None
                }
 
-    counties = ', '.join(map(str, counties))
     start_time = performance_process[1][0]
     end_time = performance_process[-1][0]
     duration = (end_time - start_time).total_seconds() / 3600  # in hours
@@ -1440,7 +1441,8 @@ def get_eaglei_event_stats(eaglei_df: pd.DataFrame,
                            event_numbers: Any, 
                            event_method: str = 'ac', 
                            timestamp_column: str = constants.TIMESTAMP_COL, 
-                           customer_column: str = constants.CUSTOMERS_COL) -> pd.DataFrame | Dict:
+                           customer_column: str = constants.CUSTOMERS_COL,
+                           counties: str = 'None') -> pd.DataFrame | Dict:
     """
     Function to get event statistics for one or more event numbers
     
@@ -1456,12 +1458,14 @@ def get_eaglei_event_stats(eaglei_df: pd.DataFrame,
     """
 
     if len(event_numbers) == 1:
-        return _get_eaglei_event_stats_single_event(eaglei_df, event_numbers[0], event_method, timestamp_column, customer_column)
+        return _get_eaglei_event_stats_single_event(eaglei_df, event_numbers[0], event_method, timestamp_column,
+                                                    customer_column, counties)
     else:
         # apply the function to all event numbers and create a DataFrame
         event_stats = []
         for event_number in event_numbers:
-            stats = _get_eaglei_event_stats_single_event(eaglei_df, event_number, event_method, timestamp_column, customer_column)
+            stats = _get_eaglei_event_stats_single_event(eaglei_df, event_number, event_method, timestamp_column,
+                                                         customer_column, counties)
             # only add the stats if start_time is not None (i.e., event exists)
             if stats['start_time'] is not None:
                 event_stats.append(stats)
