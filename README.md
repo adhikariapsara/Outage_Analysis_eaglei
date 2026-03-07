@@ -4,12 +4,13 @@
 This project processes and aligns power outage data from the EAGLE-I dataset with ASOS weather data to enable advanced analysis of weather-driven outage events. The pipeline is designed for researchers and data analysts studying the relationship between weather conditions and power system resilience and reliability.
 
 This repository contains scripts for:
-- Cleaning and Preprocessing EAGLE-I Data
-- Identifying Events in the EAGLE-I Data
-- Downloading and Cleaning Weather Data
-- Merging the EAGLE-I outage data and Weather data to form a single dataset
+- Cleaning and Preprocessing EAGLE-I Data, for any county
+- Identifying Events in the EAGLE-I Data, for any county
+- Downloading and Cleaning Weather Data, for any county
+- Merging the EAGLE-I outage data and Weather data to form a single dataset, for any county
+- Combine outage and weather data from multiple counties (of same state or different states) into a single dataset with county-level events grouped into larger multi-county events using a spatiotemporal grouping approach
 
-## How to use
+## How to use - For single county analysis
 ### Initial Setup (First Time)
 
 #### 1. Installation
@@ -32,7 +33,7 @@ This repository contains scripts for:
 
 #### 2. Prepare Data
 - Ensure EAGLE-I CSV files are in `Eagle-idatasets/` folder
-- Files should follow pattern: `eaglei_outages_{YEAR}.csv`
+- The EAGLE-I files should follow pattern: `eaglei_outages_{YEAR}.csv`
 
 #### 3. Update Configuration
 Edit `config.json` with your analysis parameters:
@@ -45,8 +46,7 @@ Edit `config.json` with your analysis parameters:
     "end_year": 2024
   }
 }
-```
-
+``` 
 ---
 
 ### Running the Pipeline
@@ -70,6 +70,7 @@ python main.py --mode outage-only
 ```
 
 #### Option 3: Override Configuration
+Instead of updating the config file, you can specify the state, county, start year, and end year directly as arguments to the main function as shown below:
 ```bash
 python main.py \
   --state "Florida" \
@@ -77,6 +78,7 @@ python main.py \
   --start-year 2020 \
   --end-year 2024
 ```
+However, the config file provides a lot more options to change.
 
 ---
 
@@ -99,9 +101,51 @@ python main.py \
 
 ---
 
+## How to use - For multi-county analysis
+As mentioned in the overview, the repo also offers the capabilities to combine data from individual counties together to form a larger dataset for multiple counties and even multiple states. Following is the step-by-step process to combine data for multiple-counties:
+1. Run the full pipeline for each county (as explained above) to generate the merged outage and weather data files for each county.
+2. Edit `config.json` file and mention the county names alongwith the corresponding state names for which you want to combine the data:
+    ```json
+    {
+      "multi_county_analysis_parameters": {
+        "state_county_pairs": [
+          {"state": "Illinois", "county": "Grundy"},
+          {"state": "Illinois", "county": "Jersey"},
+          {"state": "Illinois", "county": "Richland"},
+          {"state": "Illinois", "county": "Whiteside"}
+        ]
+      }
+    }
+    ``` 
+3. Run the code as follows the generate the multi-county data with the multi-county events identified in it:
+    ```bash
+      python main.py --mode multi-county
+      ```
+      Depending on the number of counties, the code takes a while to process all the data.  
+      Once done, the result is stored in the `multi_county_data` directory.
+
+**Note:** The multi-county grouping approach uses an adjacency graph of counties to identify which counties are neighbour of which counties based on both counties sharing some part of their geographic boundaries. There could some cases when you might want to consider two counties are neighbours even if they don't share a border with each other. Similarly there could be other cases where you might want to consider two counties as non-neighbouring counties even if they share border with each other. The `config.json` file provides additional options to handle these special cases, as shown below. These options needs to be specified before running the above code to make sure correct results are generated.
+```json
+{
+  "county_adjacency_changes": {
+    "add_edges": [
+      {"from_state": "Massachusetts", "from_county": "Dukes", 
+      "to_state": "Massachusetts", "to_county": "Barnstable"},
+      {"from_state": "Massachusetts", "from_county": "Dukes", 
+      "to_state": "Massachusetts", "to_county": "Nantucket"}
+    ],
+    "del_edges": [
+      {"from_state": "Washington", "from_county": "Pierce", 
+      "to_state": "Washington", "to_county": "Kittitas"}
+    ]
+  }
+}
+``` 
+
+---
 ## Workflow
 
-The pipeline follows a 4-stage process:
+The pipeline follows a 4-stage process for processing data for a single county:
 
 ### Stage 1: Fetch Weather Data
 - Automatically retrieves ASOS weather data from IEM servers
@@ -155,6 +199,7 @@ The `weather_variables` key in the config file can be expanded to include other 
 | `max_gap_minutes` | int | Criteria to select EAGLE-I data gaps for filling, only select data gaps that have atleast this much duration | 1440 |
 | `use_auto_gap_rank_threshold` | bool |Automatically decide a threshold for the rank metric to fill all the data gaps above that threshold | true |
 | `gap_rank_threshold_quantile` | float | Instead of automatic selection, select a rank threshold based on this quantile (set `use_auto_gap_rank_threshold` = false for this to work) | 0.4 |
+| `event_detection_approach` | string | The approach to use to calculate event detection threshold. The available options are: "flat", "percentile", "percent_customers" | "flat" |
 | `events_customer_threshold` | int | Threshold for event identification (further explanation below).  | 30 |
 
 
@@ -172,6 +217,8 @@ The `weather_variables` key in the config file can be expanded to include other 
 - **outage_data/**: Folder where cleaned outage data is stored after preprocessing
 - **weather_data/**: Contains both cleaned and uncleaned ASOS weather data
 - **merged_data/**: Contains the final merged otuput of weather and EAGLE-I outage data
+- **multi_county_data/**: Contains results from multi-county analysis 
+- **event_statistics/**: Contains different statistics of county-level events as well as multi-county (spatiotemporal) events
 - **results/**: Output results of any analysis can be output to this folder
 - **docs/**: Contains helpful documents
 - **logs/**: Contains logs
@@ -186,7 +233,7 @@ The `weather_variables` key in the config file can be expanded to include other 
 - **`main.py`**  
   The driver of the other functions - put your inputs in here and it will automatically do the full outage-weather data extraction + aggregation process.
 
-- **`outage_cleaning.py`**  
+- **`eaglei_cleaning.py`**  
   Cleans the Eagle-I outage data and stores the cleaned results in the `outage_data/` folder.
 
 - **`weather_cleaning.py`**  
@@ -197,6 +244,18 @@ The `weather_variables` key in the config file can be expanded to include other 
 
 - **`fetch_weather_data.py`**
   Automatically scrapes ASOS website for state weather data within given years and outputs it into weather_data folder.
+
+- **`multi_county_analysis.py`**
+  Performs the multi-county analysis by combining data from individual counties together and identifying spatiotemporal events. Outputs the results to `multi_county_data/` folder
+
+- **`calculate_event_stats.py`**
+  Calculate different event-level statistics for county events and also for multi-county (spatiotemporal) events. Outputs the results to `event_statistics/` folder
+
+- **`configManager.py`**
+  Contains the class to read and process the `config.json` file
+
+- **`pipelineManager.py`**
+  Contains the orchestrator class to manage the user inputs and execute the relevant modules.
 
 - **`analysis_examples.ipynb`**
   Jupyter Notebook that contain examples on how to access different variables in the final merged dataset and how to analyze events.
@@ -213,5 +272,5 @@ The `weather_variables` key in the config file can be expanded to include other 
 
 ---
 
-**Last Updated:** January 2026
-**Version:** 1.0.0
+**Last Updated:** March 2026
+**Version:** 1.1.0
