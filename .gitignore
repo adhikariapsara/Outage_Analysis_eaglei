@@ -4,7 +4,6 @@ outage_data/*
 merged_data/*
 results/*
 multi_county_data/*
-logs/*
 /eagle-idatasets/eaglei_outages_*.csv
 
 # Environment and virtualenv files
@@ -15,6 +14,7 @@ ENV/
 
 # Python cache and compiled files
 __pycache__/
+*.pyc
 *.py[cod]
 *$py.class
 *.so
@@ -51,12 +51,10 @@ logs/*.log
 # Testing
 .pytest_cache/
 .coverage
-htmlcov/
 
 # Configuration (if sensitive)
 .env
 .env.local
-config.local.json
 
 # OS specific
 Thumbs.db

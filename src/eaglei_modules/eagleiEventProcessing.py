@@ -7,15 +7,12 @@ plotting performance curves, and building outage graphs.
 
 
 Author: Arslan Ahmad
-Last Updated: December 2025
+Last Updated: March 2026
 License: MIT
 """
 
 
 # ------------------------- Import Libraries -------------------------
-
-# import warnings
-# warnings.filterwarnings("ignore")  # Ignore warnings for cleaner output
 
 from __future__ import annotations
 from typing import Dict, List, Tuple, Any
@@ -28,7 +25,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib.ticker import ScalarFormatter
-from matplotlib.ticker import FuncFormatter
 import seaborn as sns
 from datetime import timedelta
 import networkx as nx
@@ -63,14 +59,20 @@ def verify_eaglei_files(verbose: int = 1) -> list[str]:
     """
     Verify the presence of essential EAGLEi data files in the specified directory.
 
-    Args:
-        verbose (int): If 1, prints the number of years found.
+    Parameters
+    ----------
+    verbose : int, default=1
+        Verbosity level. If 1, prints the number of years found.
 
-    Returns:
-        list[str]: List of verified EAGLEi outage data file paths.
+    Returns
+    -------
+    list[str]
+        List of verified EAGLEi outage data file paths.
 
-    Raises:
-        FileNotFoundError: If the EAGLEi data directory does not exist or no outage data files are found.
+    Raises
+    ------
+    FileNotFoundError
+        If the EAGLEi data directory does not exist or no outage data files are found.
     """
 
     # construct the path to the EAGLEi data directory
@@ -105,32 +107,41 @@ def verify_eaglei_files(verbose: int = 1) -> list[str]:
 def load_eaglei_state_data(state_name: str, 
                            verbose: int = 1) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Function to read and clean EAGLEi outage data for a specific state.
+    Read and clean EAGLEi outage data for a specific state.
 
-    There are differences in column names in the EAGLE-I files for different years.
-    This function identify those and standardizes the data into a consistent format.
-    And store the cleaned file in a parquet file which takes sgignificantly less space and is faster to read.
+    This function identifies and standardizes column name differences across different years
+    of EAGLE-I data files and stores the cleaned file in a parquet format for efficient storage
+    and faster read times.
 
-    Columns From 2014 to 2020 fips_code, county, state, sum, run_start_time  
-    Columns From 2021 to 2022 fips_code, county, state, customers_out, run_start_time (sum is replaced with customers_out)  
-    Columns in 2023 fips_code, county, state, sum, run_start_time  (again started using sum instead of customers_out)  
-    Columns in 2024 fips_code, county, state, customers_out, run_start_time, total_customers (sum is replaced with customers_out)  
+    Column name variations by year:
+    - 2014-2020: fips_code, county, state, sum, run_start_time
+    - 2021-2022: fips_code, county, state, customers_out, run_start_time
+    - 2023: fips_code, county, state, sum, run_start_time
+    - 2024: fips_code, county, state, customers_out, run_start_time, total_customers
     
-    Additionally, the total_customers column is placed in the individual EAGLE-I outage files
-    instead of a seperate file. So this function seperate that information and stores it in a seperate file.
+    Additionally, extracts and separates the total_customers column information into
+    a separate file for easier access.
 
-    Args:
-        state_name (str): The name of the state to filter the data.
-        verbose (int): If 1, prints progress and information messages.
+    Parameters
+    ----------
+    state_name : str
+        The name of the state to filter the data.
+    verbose : int, default=1
+        Verbosity level. If 1, prints progress and information messages.
     
-    Returns:
-        Tuple[pd.DataFrame, pd.DataFrame]: A tuple containing two DataFrames:
-            - Cleaned DataFrame containing outage data for the specified state.
-            - DataFrame containing total customers data for counties in the specified state.
+    Returns
+    -------
+    tuple of pd.DataFrame
+        A tuple containing two DataFrames:
+        - Cleaned DataFrame containing outage data for the specified state
+        - DataFrame containing total customers data for counties in the specified state
 
-    Raises:
-        FileNotFoundError: If any of the specified EAGLE-I files do not exist.
-        ValueError: If no data is found for the specified state.
+    Raises
+    ------
+    FileNotFoundError
+        If any of the specified EAGLE-I files do not exist.
+    ValueError
+        If no data is found for the specified state.
     """
 
     # ==================== Reading and Filtering Data ====================
@@ -317,88 +328,6 @@ def load_eaglei_state_data(state_name: str,
     return data_df, county_total_customers
 
 
-def clean_eaglei_data(eaglei_df: pd.DataFrame, 
-                      customer_column: str = constants.CUSTOMERS_COL,
-                      timestamp_column: str = constants.TIMESTAMP_COL, 
-                      verbose: int = 1) -> pd.DataFrame:
-    """
-    Cleans EAGLE-i outage data by standardizing timestamps, removing zero customer outages,
-    and filling in gaps in the time series.
-    
-    Parameters:
-    -----------
-    eaglei_df : pd.DataFrame
-        DataFrame containing EAGLE-i outage data
-    customer_column : str, default=constants.CUSTOMERS_COL
-        Name of the column containing customer outage counts
-    timestamp_column : str, default=constants.TIMESTAMP_COL
-        Name of the column containing timestamps
-    verbose : int, default=1
-        Verbosity level for logging
-        - 0: No print outputs
-        - 1: Basic print outputs (such as warnings and summaries)
-        - 2: Detailed print outputs (including all intermediate steps)
-
-    Returns:
-    --------
-    pd.DataFrame
-        DataFrame with cleaned and standardized EAGLE-i outage data
-    
-    Notes:
-    -----------
-    This function performs the following operations:
-    - Checks if the data is sorted by the timestamp column and sorts it if necessary.
-    - Standardizes timestamps to 15-minute intervals.
-    - Fixes invalid timestamps that do not align with 15-minute intervals.
-    - Fixes seconds to zero in the timestamp column.
-    - Removes records where the customer outage count is zero, except for gaps in the time series
-      which will be handled separately.
-    - Returns a cleaned DataFrame.
-    """
-
-    # Create a copy to avoid modifying the original dataframe
-    df_cleaned = eaglei_df.copy()
-    
-    # Check if the data is sorted by timestamp_column
-    if not df_cleaned[timestamp_column].is_monotonic_increasing:
-        if verbose > 0:
-            print(f'Data was not sorted by {timestamp_column}, sorting the data...')
-        df_cleaned = df_cleaned.sort_values(by=timestamp_column).reset_index(drop=True)
-
-    # Standardize timestamps to 15-minute intervals
-    invalid_times = df_cleaned[~(df_cleaned[timestamp_column].dt.minute.isin([0, 15, 30, 45]))]
-    if invalid_times.shape[0] > 0:
-        if verbose > 0:
-            print('There are invalid times in the data:', invalid_times.shape[0])
-            print('  Fixing the invalid times...')
-        df_cleaned[timestamp_column] = df_cleaned[timestamp_column].apply(
-            lambda x: x.replace(minute=(x.minute // 15) * 15, second=0)
-        )
-        if verbose > 0:
-            print('  Invalid times fixed.')
-
-    # Fix seconds to zero
-    invalid_seconds = df_cleaned[df_cleaned[timestamp_column].dt.second != 0]
-    if invalid_seconds.shape[0] > 0:
-        if verbose > 0:
-            print('There are invalid seconds in the data:', invalid_seconds.shape[0])
-            print('  Fixing the invalid seconds...')
-        df_cleaned[timestamp_column] = df_cleaned[timestamp_column].apply(lambda x: x.replace(second=0))
-        if verbose > 0:
-            print('  Invalid seconds fixed.')
-
-    # Remove zero customer outages initially (we'll handle gaps separately)
-    if df_cleaned[df_cleaned[customer_column] == 0].shape[0] > 0:
-        if verbose > 0:
-            print(f'There are {df_cleaned[df_cleaned[customer_column] == 0].shape[0]} records where {customer_column} == 0')
-            print(f'  Removing the {customer_column} == 0 records...')
-        df_cleaned = df_cleaned[df_cleaned[customer_column] != 0].reset_index(drop=True)
-        if verbose > 0:
-            print(f'  Records removed with {customer_column} == 0.')
-
-    return df_cleaned
-
-
 def identify_and_rank_time_gaps(df: pd.DataFrame, 
                                 timestamp_column: str = constants.TIMESTAMP_COL, 
                                 customer_column: str = constants.CUSTOMERS_COL, 
@@ -408,22 +337,23 @@ def identify_and_rank_time_gaps(df: pd.DataFrame,
                                 ranking_method: str = 'customer_weighted',
                                 verbose: int = 1):
     """
-    Identify time gaps in a dataframe and rank them based on neighboring customer counts using sophisticated ranking algorithms.
+    Identify time gaps in a dataframe and rank them based on neighboring customer counts.
     
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df : pd.DataFrame
-        DataFrame containing timestamp and customer data
+        DataFrame containing timestamp and customer data.
     timestamp_column : str, default=constants.TIMESTAMP_COL
-        Name of the timestamp column
+        Name of the timestamp column.
     customer_column : str, default=constants.CUSTOMERS_COL
-        Name of the customer count column
-    max_gap_minutes : int, default=24*60 (24 hours)
-        Maximum gap duration in minutes to consider (gaps longer than this are ignored)
+        Name of the customer count column.
+    max_gap_minutes : int, default=1440
+        Maximum gap duration in minutes to consider (gaps longer than this are ignored).
+        Default is 24*60 (24 hours).
     min_customers_before_gap : int, default=10
-        Minimum number of customers before the gap to consider it significant
+        Minimum number of customers before the gap to consider it significant.
     min_customers_after_gap : int, default=2
-        Minimum number of customers after the gap to consider it significant
+        Minimum number of customers after the gap to consider it significant.
     ranking_method : str, default='customer_weighted'
         Ranking method to use. Options:
         - 'weighted_composite': Weighted combination of multiple factors
@@ -431,15 +361,15 @@ def identify_and_rank_time_gaps(df: pd.DataFrame,
         - 'time_weighted': Focus on time duration
         - 'hybrid_impact': Hybrid approach considering both impact and duration
     verbose : int, default=1
-        Verbosity level for logging
+        Verbosity level for logging.
         - 0: No print outputs
         - 1: Basic print outputs (such as warnings and summaries)
         - 2: Detailed print outputs (including all intermediate steps)
 
-    Returns:
-    --------
+    Returns
+    -------
     pd.DataFrame
-        DataFrame with gap information, neighboring customer counts, and rankings
+        DataFrame with gap information, neighboring customer counts, and rankings.
     """
     
     # Sort the dataframe by timestamp
@@ -520,17 +450,19 @@ def _calculate_gap_metrics(gap_info: Dict) -> Dict:
     """
     Calculate various metrics for a single gap based on neighboring customer counts.
     
-    Parameters:
-    -----------
-    gap_info : Dict
+    Parameters
+    ----------
+    gap_info : dict
         Dictionary containing information about the gap, including:
         - 'customers_before': Number of customers before the gap
-        - 'customers_after': Number of customers after the gap  
+        - 'customers_after': Number of customers after the gap
     
-    Returns:
-    --------
-    Dict
-        Dictionary containing calculated metrics for the gap.
+    Returns
+    -------
+    dict
+        Dictionary containing calculated metrics for the gap, including:
+        - 'customer_avg': Average of customers before and after
+        - 'customer_consistency': Ratio of min to max customers
     """
     
     customers_before = gap_info['customers_before']
@@ -557,21 +489,21 @@ def _calculate_gap_metrics(gap_info: Dict) -> Dict:
 def _apply_gap_ranking(gaps_df: pd.DataFrame, 
                        ranking_method: str = 'customer_weighted') -> pd.DataFrame:
     """
-    Applying ranking algorithms to the gaps DataFrame.
+    Apply ranking algorithms to the gaps DataFrame.
     
-    Parameters:
-    -----------
+    Parameters
+    ----------
     gaps_df : pd.DataFrame
-        DataFrame containing gap information and metrics
+        DataFrame containing gap information and metrics.
     ranking_method : str, default='customer_weighted'
         Ranking method to use. Options:
         - 'customer_weighted': Focus on customer impact
         - 'time_weighted': Focus on time duration
     
-    Returns:
-    --------
+    Returns
+    -------
     pd.DataFrame
-        DataFrame with added ranking information
+        DataFrame with added 'rank' column containing gap rankings.
     """
     
     # Normalize metrics to 0-1 range for fair comparison
@@ -619,20 +551,20 @@ def analyze_gap_rankings(gaps_df: pd.DataFrame,
     """
     Analyze and display the top-ranked gaps with detailed information.
     
-    Parameters:
-    -----------
+    Parameters
+    ----------
     gaps_df : pd.DataFrame
-        DataFrame with ranked gaps from identify_and_rank_time_gaps
+        DataFrame with ranked gaps from identify_and_rank_time_gaps.
     top_n : int, default=10
-        Number of top gaps to display
+        Number of top gaps to display.
     verbose : int, default=1
-        Verbosity level for logging
+        Verbosity level for logging.
         - 0: No print outputs
         - 1: Basic print outputs
         - 2: Detailed print outputs (including all intermediate steps)
     
-    Returns:
-    --------
+    Returns
+    -------
     None
     """
     
@@ -685,16 +617,16 @@ def visualize_gap_analysis(df: pd.DataFrame, rank_quantile: float | None = None)
     """
     Create comprehensive visualizations for gap analysis results.
     
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df : pd.DataFrame
-        DataFrame with ranked gaps from identify_and_rank_time_gaps
-    rank_quantile : float, optional
-        Quantile to determine rank threshold for highlighting (e.g., 0.5 for median)
+        DataFrame with ranked gaps from identify_and_rank_time_gaps.
+    rank_quantile : float or None, default=None
+        Quantile to determine rank threshold for highlighting (e.g., 0.5 for median).
         If None, median (0.5) is used as default.
 
-    Returns:
-    --------
+    Returns
+    -------
     None
     """
     
@@ -790,12 +722,13 @@ def fill_data_gaps_eaglei(eaglei_df: pd.DataFrame,
     
     This function addresses missing data records during large outage events by filling gaps
     with the immediately preceding customer outage values. It uses the identified gaps
-    from the `gaps_df` DataFrame, which contains the indices of gaps, timestamps before and after the gaps, and their ranks.
+    from the gaps_df DataFrame, which contains the indices of gaps, timestamps before and 
+    after the gaps, and their ranks.
     
-    Parameters:
-    -----------
+    Parameters
+    ----------
     eaglei_df : pd.DataFrame
-        DataFrame containing EAGLE-i outage data
+        DataFrame containing EAGLE-i outage data.
     gaps_df : pd.DataFrame
         DataFrame containing identified gaps with columns:
         - 'gap_index': Index of the gap in eaglei_df
@@ -803,19 +736,19 @@ def fill_data_gaps_eaglei(eaglei_df: pd.DataFrame,
         - 'timestamp_after': Timestamp after the gap
         - 'rank': Rank of the gap based on its characteristics
     timestamp_column : str, default=constants.TIMESTAMP_COL
-        Name of the column containing timestamps
+        Name of the column containing timestamps.
     rank_threshold : float, default=0.35
-        Threshold for gap ranking to determine which gaps to fill
+        Threshold for gap ranking to determine which gaps to fill.
     verbose : int, default=1
-        Verbosity level for logging
+        Verbosity level for logging.
         - 0: No print outputs
         - 1: Basic print outputs (such as warnings and summaries)
         - 2: Detailed print outputs (including all intermediate steps)
 
-    Returns:
-    --------
+    Returns
+    -------
     pd.DataFrame
-        DataFrame with filled data gaps, maintaining original structure but with additional records
+        DataFrame with filled data gaps, maintaining original structure but with additional records.
     """
     
     if eaglei_df['county'].nunique() > 1:
@@ -876,111 +809,6 @@ def fill_data_gaps_eaglei(eaglei_df: pd.DataFrame,
     return filled_df
 
 
-def plot_eaglei_filled_gaps(df: pd.DataFrame, 
-                            customer_column: str = constants.CUSTOMERS_COL, 
-                            timestamp_column: str = constants.TIMESTAMP_COL):
-    """
-    Plots the EAGLE-I outages data with a step plot and scatter points for original, filled, and missing data.
-    This function is used to visualize the outages in the EAGLE-I dataset, before converting them to events and 
-    extracting the outage, restore and perofmance curves.
-    Main utility of this function is to visualize the gaps in the EAGLE-I data, and how the gap filling
-    algorithm fill those gaps.
-
-    Parameters:
-    - df: DataFrame containing the EAGLE-I outages data.
-    - customer_column: Name of the column containing customer data (default is constants.CUSTOMERS_COL).
-    - timestamp_column: Name of the column containing timestamps (default is constants.TIMESTAMP_COL).
-
-    Returns:
-    - None
-    """
-    
-    if len(df) == 0:
-        print("DataFrame is empty. No data to plot.")
-        return None
-    if len(df) > 5000:
-        print("DataFrame has more than 1000 records. Plot will be cluttered.")
-        return None
-
-    # Make a copy to avoid modifying original data
-    df_plot = df.copy()
-    
-    # Ensure run_start_time is datetime
-    if not pd.api.types.is_datetime64_any_dtype(df_plot[timestamp_column]):
-        print(f"Converting {timestamp_column} to datetime format...")
-        df_plot[timestamp_column] = pd.to_datetime(df_plot[timestamp_column])
-    
-    # Sort by time if not already sorted
-    if not df_plot[timestamp_column].is_monotonic_increasing:
-        print(f"Sorting {timestamp_column} in ascending order...")
-        df_plot = df_plot.sort_values(by=timestamp_column).reset_index(drop=True)
-
-    # Create a 15-minute frequency time series using the minimum and maximum timestamps values in the timestamp column
-    min_time = df_plot[timestamp_column].min()
-    max_time = df_plot[timestamp_column].max()
-    timeSeries = pd.date_range(start=min_time, end=max_time, freq='15min')
-    # Create a new DataFrame with the time series
-    df_time_series = pd.DataFrame(timeSeries, columns=[timestamp_column])
-    # Merge the time series with the original data
-    df_plot = pd.merge(df_time_series, df_plot, on=timestamp_column, how='left')
-    # Fill NaN values in the customer column with 0
-    df_plot[customer_column] = df_plot[customer_column].fillna(0)
-
-    
-    # Create plot
-    plt.figure(figsize=(12, 6))
-    
-    if 'filled_gap' in df_plot.columns:
-        # Plot only the original data
-        original_data = df_plot[(df_plot[customer_column] > 0) & (df_plot['filled_gap'] != True)]
-        if not original_data.empty:
-            # Plot original data
-            plt.scatter(original_data[timestamp_column], original_data[customer_column], 
-                    alpha=1.0, s=30, label='Original data', color='#1f77b4')
-            
-        # Plot filled data
-        filled_only = df_plot[df_plot['filled_gap'] == True]
-        if not filled_only.empty:
-            plt.scatter(filled_only[timestamp_column], filled_only[customer_column], 
-                       alpha=1.0, s=30, label='Gap-filled data', color="#CE07C4", marker='D')
-    else:
-        # Plot only the original data
-        original_data = df_plot[df_plot[customer_column] > 0]
-        if not original_data.empty:
-            # Plot original data
-            plt.scatter(original_data[timestamp_column], original_data[customer_column], 
-                    alpha=1.0, s=30, label='Original data', color='#1f77b4')
-            
-    # Plot missing data
-    missing_data = df_plot[df_plot[customer_column] == 0]
-    if not missing_data.empty:
-        # Plot missing data
-        plt.scatter(missing_data[timestamp_column], missing_data[customer_column], 
-                   alpha=1.0, s=30, label='Missing data', color="#ce0909", marker='x')
-    
-    # Plot step plot
-    plt.step(df_plot[timestamp_column], df_plot[customer_column], where='post', color='#ff7f0e', alpha=1.0, label='Performance Curve', linewidth=1.5)
-    
-    plt.xlabel('Time')
-    plt.ylabel('Customers Out')
-    if df_plot['county'].nunique() > 1:
-        plt.title(f'EAGLE-I Data from {df_plot[timestamp_column].min().date():%Y-%m-%d %H:%M} to {df_plot[timestamp_column].max().date():%Y-%m-%d %H:%M} for Multiple Counties')
-    else:
-        plt.title(f'EAGLE-I Data from {df_plot[timestamp_column].min().date():%Y-%m-%d %H:%M} to {df_plot[timestamp_column].max().date():%Y-%m-%d %H:%M} for {df_plot["county"].iloc[0]} County, {df_plot["state"].iloc[0]}')
-    plt.legend()
-    # plt.xticks(rotation=45)
-    plt.tight_layout()
-    plt.grid(True, alpha=0.1)
-    # space the vertical grid lines at 15-minute intervals
-    # plt.gca().xaxis.set_major_locator(mdates.MinuteLocator(interval=120))  # Set major ticks at 120-minute intervals
-    # format the x-axis labels to show date and time
-    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
-    plt.gcf().autofmt_xdate()  # Rotate x-axis labels for better readability
-    plt.show()
-    
-    return None
-
-
 # ------------------------- Event Extraction -------------------------
 
 
@@ -988,17 +816,30 @@ def extract_events_eaglei_ac(outage_df: pd.DataFrame,
                              time_delta: int = 15, 
                              timestamp_column: str = constants.TIMESTAMP_COL) -> pd.DataFrame:
     """
-    Extract outage events from the EAGLE-I dataset using the AC method.
-    This is the very basic version of the event extraction, which simply groups the outages into events based on a missing 15-minute interval.
-    The data has to be cleaned and the missing gaps should be filled before using this function.
+    Extract outage events from the EAGLE-I dataset using the AC (All Consecutive) method.
     
-    Parameters:
-    - outage_df: The input DataFrame containing outage data.
-    - time_delta: The time interval (in minutes) to consider for grouping outages.
-    - timestamp_column: The name of the column containing timestamp information.
+    This is a basic event extraction method that groups outages into events based on
+    consecutive 15-minute intervals. A new event is created when there is a gap in the
+    time series. The data must be cleaned and missing gaps filled before using this function.
+    
+    Parameters
+    ----------
+    outage_df : pd.DataFrame
+        The input DataFrame containing outage data.
+    time_delta : int, default=15
+        The time interval (in minutes) to consider for grouping outages.
+    timestamp_column : str, default=constants.TIMESTAMP_COL
+        The name of the column containing timestamp information.
 
-    Returns:
-    - pd.DataFrame: DataFrame with an additional column 'event_number_ac' indicating event numbers.
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with an additional column 'event_number_ac' indicating event numbers.
+        
+    Raises
+    ------
+    ValueError
+        If timestamp_column is missing, data is not sorted, or filled_gap column is missing.
     """
     # check if timestamp column exists
     if timestamp_column not in outage_df.columns:
@@ -1042,22 +883,42 @@ def extract_events_eaglei_ac_threshold(outage_df: pd.DataFrame,
                                         active_only: bool = False,
                                         crossing_mode: str = "both") -> pd.DataFrame:
     """
-    Detects events in the EAGLE-i DataFrame based on customer outage thresholds and time intervals.
-    An event is defined as a continuous period where the number of customer outages MEETS or EXCEEDS
-    a specified threshold, with gaps in time series data handled appropriately.
+    Detect events in the EAGLE-i DataFrame based on customer outage thresholds.
+    
+    An event is defined as a continuous period where the number of customer outages
+    meets or exceeds a specified threshold, with gaps in time series data handled
+    appropriately.
 
-    Parameters:
-    - outage_df (pd.DataFrame): DataFrame containing time series data with customer outages.
-    - event_detection_type (str): Method for selecting number of customers on outage threshold.
-    - customer_threshold (int): Threshold for customer outages to consider an event active.
-    - time_delta (str): Time interval for checking continuity (e.g., "15min").
-    - timestamp_column (str): Name of the column containing timestamps.
-    - customer_column (str): Name of the column containing customer outage counts.
-    - active_only (bool): If True, only label events where customer outages exceed the threshold.
-    - crossing_mode (str): Mode for detecting status changes ("both" or "down").
+    Parameters
+    ----------
+    outage_df : pd.DataFrame
+        DataFrame containing time series data with customer outages.
+    event_detection_type : str, default="flat"
+        Method for selecting customer outage threshold. Options: 'flat', 'percentile', 'percent_customers'.
+    total_customers : int, default=0
+        Total number of customers in the county (used for 'percent_customers' method).
+    customer_threshold : float, default=10
+        Threshold for customer outages to consider an event active.
+    time_delta : str, default="15min"
+        Time interval for checking continuity (e.g., "15min").
+    timestamp_column : str, default=constants.TIMESTAMP_COL
+        Name of the column containing timestamps.
+    customer_column : str, default=constants.CUSTOMERS_COL
+        Name of the column containing customer outage counts.
+    active_only : bool, default=False
+        If True, only label events where customer outages exceed the threshold.
+    crossing_mode : str, default="both"
+        Mode for detecting status changes. Options: 'both' (any crossing) or 'down' (only downward crossing).
 
-    Returns:
-    - pd.DataFrame: DataFrame with an additional column indicating event numbers.
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with an additional column indicating event numbers.
+        
+    Raises
+    ------
+    ValueError
+        If required columns are missing, crossing_mode is invalid, or data format is incorrect.
     """
     # Check if customer_column exists
     if customer_column not in outage_df.columns:
@@ -1139,85 +1000,6 @@ def extract_events_eaglei_ac_threshold(outage_df: pd.DataFrame,
     return df
 
 
-def count_crossings(df: pd.DataFrame,
-                    value_col: str = constants.CUSTOMERS_COL,
-                    timestamp_col: str = constants.TIMESTAMP_COL,
-                    threshold: int = 0,
-                    crossing: str = "down") -> int:
-    """
-    Count the number of threshold crossings in a time series.
-    Handles missing 15-minute intervals by filling with 0.
-
-    Crossing types:
-      - "down": current >= threshold and next < threshold
-      - "up":   current < threshold and next >= threshold
-      - "both": counts both upward and downward crossings
-
-    Note that the number of "up" crossings may not equal
-    the number of "down" crossings if the series starts
-    or ends above or below the threshold.
-    But other than that the number of "up" and "down"
-    crossings should be equal and the "both" count should be double.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Must contain timestamp and value columns.
-    value_col : str
-        Name of column with numeric values.
-    timestamp_col : str
-        Name of column with timestamps.
-    threshold : int
-        Threshold for crossings.
-    crossing : {"down", "up", "both"}
-        Type of crossing to count.
-
-    Returns
-    -------
-    int
-        Number of crossings.
-    """
-    if crossing not in {"down", "up", "both"}:
-        raise ValueError("crossing must be one of {'down', 'up', 'both'}")
-
-    if value_col not in df.columns or timestamp_col not in df.columns:
-        raise ValueError(f"DataFrame must contain '{timestamp_col}' and '{value_col}'")
-
-    # Ensure datetime
-    ts = pd.to_datetime(df[timestamp_col])
-    df = df.copy()
-    df[timestamp_col] = ts
-    df = df.sort_values(timestamp_col).reset_index(drop=True)
-
-    # Check sampling interval
-    diffs = df[timestamp_col].diff().dropna()
-    if not (diffs.mode().iloc[0] == pd.Timedelta("15min")):
-        raise ValueError("Data is not sampled at consistent 15-minute intervals")
-
-    # Reindex to continuous 15min grid, fill missing with 0
-    full_index = pd.date_range(start=df[timestamp_col].iloc[0],
-                               end=df[timestamp_col].iloc[-1],
-                               freq="15min")
-    df = df.set_index(timestamp_col).reindex(full_index)
-    df[value_col] = df[value_col].fillna(0)
-    df = df.reset_index().rename(columns={"index": timestamp_col})
-
-    # Crossing detection
-    series = df[value_col].astype(float)
-    current = series[:-1].values
-    nxt = series[1:].values
-
-    if crossing == "down":
-        crossings = (current >= threshold) & (nxt < threshold)
-    elif crossing == "up":
-        crossings = (current < threshold) & (nxt >= threshold)
-    elif crossing == "both":
-        crossings = ((current >= threshold) & (nxt < threshold)) | \
-                    ((current < threshold) & (nxt >= threshold))
-
-    return int(crossings.sum())
-
-
 # ------------------------- Event Processes And Statistics -------------------------
 
 
@@ -1227,19 +1009,33 @@ def get_eaglei_processes(outage_df: pd.DataFrame,
                          timestamp_column: str = constants.TIMESTAMP_COL, 
                          customer_column: str = constants.CUSTOMERS_COL) -> Tuple[List, List, List]:
     """
-    Function to get the outage, restore, and performance processes for a given event number
+    Get the outage, restore, and performance processes for a given event number.
 
-    Parameters:
-        outage_df: the outage data frame
-        event_number: the event number to get the processes for
-        event_method: the method used to extract the event number (default is 'ac')
-        timestamp_column: the name of the timestamp column (default is constants.TIMESTAMP_COL)
-        customer_column: the name of the customer column (default is constants.CUSTOMERS_COL)
-    Returns:
+    Parameters
+    ----------
+    outage_df : pd.DataFrame
+        The outage data frame.
+    event_number : int
+        The event number to get the processes for.
+    event_method : str, default='ac'
+        The method used to extract the event number.
+    timestamp_column : str, default=constants.TIMESTAMP_COL
+        The name of the timestamp column.
+    customer_column : str, default=constants.CUSTOMERS_COL
+        The name of the customer column.
+        
+    Returns
+    -------
+    tuple of list
         A tuple containing three lists:
-            - outages: list of tuples (timestamp, customers_out) for outages
-            - restores: list of tuples (timestamp, customers_restored) for restorations
-            - performance_data: list of tuples (timestamp, customers_out) for performance curve
+        - outages : list of tuple (timestamp, customers_out) for outages
+        - restores : list of tuple (timestamp, customers_restored) for restorations
+        - performance_data : list of tuple (timestamp, customers_out) for performance curve
+        
+    Raises
+    ------
+    ValueError
+        If timestamp column has duplicate values, indicating potential multi-county data.
     """
 
     event_column = f'event_number_{event_method}'
@@ -1290,19 +1086,30 @@ def get_eaglei_spatiotemporal_processes(outage_df: pd.DataFrame,
                          timestamp_column: str = constants.TIMESTAMP_COL,
                          customer_column: str = constants.CUSTOMERS_COL) -> Tuple[List, List, List]:
     """
-    Function to get the outage, restore, and performance processes for a given spatiotemporal event number
+    Get the outage, restore, and performance processes for a spatiotemporal event.
+    
+    This function aggregates data across multiple counties for spatiotemporal events.
 
-    Parameters:
-        outage_df: the outage data frame
-        event_number: the event number to get the processes for
-        event_method: the method used to extract the event number (default is 'ac')
-        timestamp_column: the name of the timestamp column (default is constants.TIMESTAMP_COL)
-        customer_column: the name of the customer column (default is constants.CUSTOMERS_COL)
-    Returns:
+    Parameters
+    ----------
+    outage_df : pd.DataFrame
+        The outage data frame.
+    event_number : int
+        The event number to get the processes for.
+    event_method : str, default='ac'
+        The method used to extract the event number.
+    timestamp_column : str, default=constants.TIMESTAMP_COL
+        The name of the timestamp column.
+    customer_column : str, default=constants.CUSTOMERS_COL
+        The name of the customer column.
+        
+    Returns
+    -------
+    tuple of list
         A tuple containing three lists:
-            - outages: list of tuples (timestamp, customers_out) for outages
-            - restores: list of tuples (timestamp, customers_restored) for restorations
-            - performance_data: list of tuples (timestamp, customers_out) for performance curve
+        - outages : list of tuple (timestamp, customers_out) for outages
+        - restores : list of tuple (timestamp, customers_restored) for restorations
+        - performance_data : list of tuple (timestamp, customers_out) for performance curve
     """
 
     event_column = f'event_number_{event_method}'
@@ -1354,24 +1161,47 @@ def _get_eaglei_event_stats_single_event(eaglei_df: pd.DataFrame,
                                          customer_column: str = constants.CUSTOMERS_COL,
                                          counties: str = 'None') -> Dict:
     """
-    Function to get the statistics of a given event number
+    Get statistics for a single event number.
     
-    Parameters:
-        eaglei_df: the outage data frame
-        event_number: the event number to get the statistics for
-        timestamp_column: the name of the timestamp column (default is constants.TIMESTAMP_COL)
-        customer_column: the name of the customer column (default is constants.CUSTOMERS_COL)
+    Parameters
+    ----------
+    eaglei_df : pd.DataFrame
+        The outage data frame.
+    event_number : int
+        The event number to get the statistics for.
+    event_method : str, default='ac'
+        The method used to extract the event.
+    timestamp_column : str, default=constants.TIMESTAMP_COL
+        The name of the timestamp column.
+    customer_column : str, default=constants.CUSTOMERS_COL
+        The name of the customer column.
+    counties : str, default='None'
+        Names of counties affected by the event.
         
-    Returns:
+    Returns
+    -------
+    dict
         A dictionary with the following keys:
-            - event_number: the event number
-            - start_time: the start time of the event
-            - end_time: the end time of the event
-            - duration: the duration of the event in minutes
-            - max_customers_out: the maximum number of customers out during the event
-            - total_customers_out: the total number of customers out during the event
-            - num_outages: the number of outages during the event
-            - num_restores: the number of restores during the event
+        - event_number : int
+            The event number
+        - start_time : datetime
+            The start time of the event
+        - end_time : datetime
+            The end time of the event
+        - duration_hours : float
+            The duration of the event in hours
+        - max_customers_out : int
+            The maximum number of customers out during the event
+        - total_customers_out : int
+            The total number of customers out during the event
+        - num_outages : int
+            The number of outages during the event
+        - num_restores : int
+            The number of restores during the event
+        - customer_hours : float
+            Total customer-hours of outage
+        - counties_affected : str
+            Names of counties affected
     """
     if "eaglei" in event_method.lower():
         outages, restores, performance_process = get_eaglei_processes(eaglei_df, event_number, event_method,
@@ -1444,17 +1274,27 @@ def get_eaglei_event_stats(eaglei_df: pd.DataFrame,
                            customer_column: str = constants.CUSTOMERS_COL,
                            counties: str = 'None') -> pd.DataFrame | Dict:
     """
-    Function to get event statistics for one or more event numbers
+    Get event statistics for one or more event numbers.
     
-    Parameters:
-        eaglei_df: the EAGLEi data frame
-        event_numbers: a single event number or a list of event numbers
-        event_method: the method used to extract the events (default is 'ac')
-        timestamp_column: the name of the timestamp column (default is constants.TIMESTAMP_COL)
-        customer_column: the name of the customer column (default is constants.CUSTOMERS_COL)
+    Parameters
+    ----------
+    eaglei_df : pd.DataFrame
+        The EAGLEi data frame.
+    event_numbers : int or list of int
+        A single event number or a list of event numbers.
+    event_method : str, default='ac'
+        The method used to extract the events.
+    timestamp_column : str, default=constants.TIMESTAMP_COL
+        The name of the timestamp column.
+    customer_column : str, default=constants.CUSTOMERS_COL
+        The name of the customer column.
+    counties : str, default='None'
+        Names of counties affected.
         
-    Returns:
-        A DataFrame if multiple event numbers are provided, or a dictionary if a single event number is provided
+    Returns
+    -------
+    pd.DataFrame or dict
+        A DataFrame if multiple event numbers are provided, or a dictionary if a single event number is provided.
     """
 
     if len(event_numbers) == 1:
@@ -1482,17 +1322,25 @@ def plot_eaglei_event_curves(outage_df: pd.DataFrame,
                              timestamp_column: str = constants.TIMESTAMP_COL, 
                              customer_column: str = constants.CUSTOMERS_COL) -> None:
     """
-    Function to plot the outage and restore processes for a given event number
+    Plot the outage, restore, and performance processes for a given event number.
     
-    Parameters:
-        outage_df: the outage data frame
-        event_number: the event number to plot
-        event_method: the method used to extract the events (default is 'ac')
-        timestamp_column: the name of the timestamp column (default is constants.TIMESTAMP_COL)
-        customer_column: the name of the customer column (default is constants.CUSTOMERS_COL)
+    Parameters
+    ----------
+    outage_df : pd.DataFrame
+        The outage data frame.
+    event_number : int
+        The event number to plot.
+    event_method : str, default='ac'
+        The method used to extract the events.
+    timestamp_column : str, default=constants.TIMESTAMP_COL
+        The name of the timestamp column.
+    customer_column : str, default=constants.CUSTOMERS_COL
+        The name of the customer column.
 
-    Returns:
-        None
+    Returns
+    -------
+    None
+        Displays the plot using matplotlib.
     """
     outages, restores, performance_process = get_eaglei_processes(outage_df, event_number, event_method, timestamp_column, customer_column)
 
@@ -1535,70 +1383,33 @@ def plot_eaglei_event_curves(outage_df: pd.DataFrame,
     plt.show()
 
 
-def plot_eaglei_log_performance(outage_df: pd.DataFrame, 
-                                event_number: int, 
-                                event_method: str = 'ac', 
-                                timestamp_column: str = constants.TIMESTAMP_COL, 
-                                customer_column: str = constants.CUSTOMERS_COL) -> None:
-    """
-    Function to plot the outage and restore processes for a given event number
-    
-    Parameters:
-        outage_df: the outage data frame
-        event_number: the event number to plot
-        event_method: the method used to extract the events (default is 'ac')
-        timestamp_column: the name of the timestamp column (default is constants.TIMESTAMP_COL)
-        customer_column: the name of the customer column (default is constants.CUSTOMERS_COL)
-    
-    Returns:
-        None
-    """
-    outages, _, performance_process = get_eaglei_processes(outage_df, event_number, event_method, timestamp_column, customer_column)
-    
-    # Remove the first time step of the performance process
-    performance_process = performance_process[1:]  # Remove the first time step (0, 0)
-    performance_process.insert(0, (performance_process[0][0], 0))  
-
-    # create a step plot of the outages
-    plt.figure(figsize=(18,7))
-    plt.step([row[0] for row in performance_process], [row[1] for row in performance_process], where='post', label='Performance Curve', color=constants.COLOR_PERFORMANCE_CURVE, linewidth=1.5, zorder=3)
-    plt.ylabel('Number of Customers (log scale)')
-    plt.xlabel('Time')
-    plt.title('Outage and Restore Processes for EAGLE-i Event Number: ' + str(event_number) + ' with ' + str(len(outages)) +' outages (' + event_method.upper() + ')')
-    plt.legend()
-    plt.yscale('log')
-    plt.axhline(y=1, color='black', linewidth=0.5, zorder=0, alpha=0.5, linestyle='--')  # show a horizontal line at 1
-    plt.axhline(y=2, color='black', linewidth=0.5, zorder=0, alpha=0.5, linestyle='--')  # show a horizontal line at 2
-    plt.axhline(y=3, color='black', linewidth=0.5, zorder=0, alpha=0.5, linestyle='--')  # show a horizontal line at 3
-    # Format x-axis for better readability
-    xtick_locator = mdates.AutoDateLocator()  # Automatically adjust ticks
-    xtick_formatter = mdates.DateFormatter('%m-%d-%y\n%H:%M')
-    plt.gca().xaxis.set_major_locator(xtick_locator)
-    plt.gca().xaxis.set_major_formatter(xtick_formatter)
-    # Show x-axis ticks every hour
-    plt.gca().xaxis.set_tick_params(left=True, labelleft=True)
-    plt.gca().yaxis.set_major_formatter(custom_label_formatter)  # Use custom formatter for y-axis
-    
-    plt.show()
-
-
 def plot_multiple_eaglei_performance_curves(outage_df: pd.DataFrame, 
                                             event_numbers: List[int], 
                                             event_method: str = 'ac', 
                                             timestamp_column: str = constants.TIMESTAMP_COL, 
                                             customer_column: str = constants.CUSTOMERS_COL) -> None:
     """
-    Function to plot the outage and restore processes for multiple event numbers in subplots of 5x10
+    Plot outage and restore processes for multiple event numbers in a grid layout.
     
-    Parameters:
-        outage_df: the outage data frame
-        event_numbers: the list of event numbers to plot
-        event_method: the method used to extract the events (default is 'ac')
-        timestamp_column: the name of the timestamp column (default is constants.TIMESTAMP_COL)
-        customer_column: the name of the customer column (default is constants.CUSTOMERS_COL)
+    Creates a subplot grid with 5 columns displaying performance curves for multiple events.
     
-    Returns:
-        None
+    Parameters
+    ----------
+    outage_df : pd.DataFrame
+        The outage data frame.
+    event_numbers : list of int
+        The list of event numbers to plot.
+    event_method : str, default='ac'
+        The method used to extract the events.
+    timestamp_column : str, default=constants.TIMESTAMP_COL
+        The name of the timestamp column.
+    customer_column : str, default=constants.CUSTOMERS_COL
+        The name of the customer column.
+    
+    Returns
+    -------
+    None
+        Displays the plots using matplotlib.
     """
     num_events = len(event_numbers)
     num_cols = 5
@@ -1664,16 +1475,21 @@ def _detect_missing_data_gaps(df: pd.DataFrame,
                               timestamp_col: str = constants.TIMESTAMP_COL, 
                               freq: str = "15min") -> pd.DataFrame:
     """
-    Detects missing data gaps in the timestamp column of the dataframe.
-    Returns a dataframe with start and end timestamps of the missing gaps and their duration.
+    Detect missing data gaps in the timestamp column of the dataframe.
     
-    Parameters:
-    - df: The input dataframe containing the timestamp column.
-    - timestamp_col: The name of the timestamp column in the dataframe.
-    - freq: The frequency of the EAGLE-I timestamps (default is "15min").
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The input dataframe containing the timestamp column.
+    timestamp_col : str, default=constants.TIMESTAMP_COL
+        The name of the timestamp column in the dataframe.
+    freq : str, default="15min"
+        The frequency of the EAGLE-I timestamps.
     
-    Returns:
-    - pd.DataFrame: A dataframe with columns 'start', 'end', and 'duration' indicating the missing data gaps.
+    Returns
+    -------
+    pd.DataFrame
+        A dataframe with columns 'start', 'end', and 'duration' indicating the missing data gaps.
     """
     
     # create a new dataframe using the timestamp column values excluding the last value
@@ -1693,17 +1509,26 @@ def _detect_flatline_periods(df_sorted: pd.DataFrame,
                              min_value: int = 1, 
                              var_window: str = "12h") -> pd.DataFrame:
     """
-    Detects flatline anomalies where the series is stuck above min_value.
+    Detect flatline anomalies where the series is stuck above min_value.
     
-    Parameters:
-    - df_sorted: The input dataframe sorted by timestamp.
-    - timestamp_col: The name of the timestamp column in the dataframe.
-    - value_col: The name of the value column to check for flatlines.
-    - min_value: The minimum value threshold to consider for flatlines.
-    - var_window: The rolling window size for variance calculation (default is "12h").
+    Parameters
+    ----------
+    df_sorted : pd.DataFrame
+        The input dataframe sorted by timestamp.
+    timestamp_col : str, default=constants.TIMESTAMP_COL
+        The name of the timestamp column in the dataframe.
+    value_col : str, default=constants.CUSTOMERS_COL
+        The name of the value column to check for flatlines.
+    min_value : int, default=1
+        The minimum value threshold to consider for flatlines.
+    var_window : str, default='12h'
+        The rolling window size for variance calculation.
     
-    Returns:
-    - pd.DataFrame: A dataframe containing detected flatline anomalies with start time, end time, duration, and flat value.
+    Returns
+    -------
+    pd.DataFrame
+        A dataframe containing detected flatline anomalies with start time, end time, 
+        duration, and flat value.
     """
     # Rolling variance
     df_sorted["rolling_var"] = df_sorted.rolling(window=var_window, min_periods=1, on=timestamp_col)[value_col].var()
@@ -1747,14 +1572,19 @@ def _detect_flatline_periods(df_sorted: pd.DataFrame,
 def _max_consecutive_true_duration(mask: Any, 
                                    index: Any) -> pd.Timedelta:
     """
-    Return max duration (Timedelta) of consecutive True segments in mask (same length as index).
+    Return max duration (Timedelta) of consecutive True segments in mask.
     
-    Parameters:
-    - mask: Boolean array indicating True/False values.
-    - index: DatetimeIndex corresponding to the mask.
+    Parameters
+    ----------
+    mask : array-like
+        Boolean array indicating True/False values.
+    index : pd.DatetimeIndex
+        DatetimeIndex corresponding to the mask (same length as mask).
     
-    Returns:
-    - pd.Timedelta: Maximum duration of consecutive True segments.
+    Returns
+    -------
+    pd.Timedelta
+        Maximum duration of consecutive True segments.
     """
     max_dur = pd.Timedelta(0)
     start = None
@@ -1787,35 +1617,37 @@ def _detect_stuck_periods(df_sorted: pd.DataFrame,
                           run_length_thresh: str = "1h",     # long consecutive time at floor
                           flatline_df=None) -> pd.DataFrame:
     """
-    Detect candidate clipped (left-censored) periods.
-    Returns list of (start, end, diagnostics_dict).
-    Diagnostics include floor_val, floor_fraction, max_run_time, next_val, gap.
+    Detect candidate clipped (left-censored) periods in time series data.
+    
+    Returns list of stuck periods with diagnostics including floor_val, floor_fraction, 
+    max_run_time, next_val, and gap.
     
     Parameters
     ----------
     df_sorted : pd.DataFrame
         Input dataframe sorted by timestamp.
-    value_col : str
+    value_col : str, default='customers_out'
         Column name for the values to analyze.
-    timestamp_col : str
+    timestamp_col : str, default='run_start_time'
         Column name for the timestamps.
-    min_value : int
+    min_value : int, default=1
         Minimum value threshold to consider for stuck detection.
-    window_width : str
-        Rolling window width for minimum calculation (e.g., "24h").
-    duration_thresh : str
-        Minimum duration threshold for stuck periods (e.g., "14D").
-    floor_frac_thresh : float
+    window_width : str, default='24h'
+        Rolling window width for minimum calculation.
+    duration_thresh : str, default='14D'
+        Minimum duration threshold for stuck periods.
+    floor_frac_thresh : float, default=0.001
         Fraction of points at floor to consider as clipping.
-    run_length_thresh : str
-        Minimum consecutive run length at floor to consider as clipping (e.g., "1h").
-    flatline_df : pd.DataFrame, optional
+    run_length_thresh : str, default='1h'
+        Minimum consecutive run length at floor to consider as clipping.
+    flatline_df : pd.DataFrame or None, default=None
         DataFrame of flatline periods to exclude from analysis.
     
     Returns
     -------
     pd.DataFrame
-        DataFrame containing detected stuck anomalies with diagnostics.
+        DataFrame containing detected stuck anomalies with diagnostics columns:
+        start_time, end_time, duration, stuck_value, floor_fraction, next_val, gap, max_run_time.
     """
     df = df_sorted.copy()
     # exclude the flatline periods from the data
@@ -1913,32 +1745,34 @@ def detect_eaglei_data_issues(df: pd.DataFrame,
                               min_gap_duration: str = "3D",
                               min_flatline_duration: str = "3D") -> Dict:
     """
-    Analyze the dataset and suggest reasonable values for 
-    min_gap_duration and min_stuck_duration for the detect_eaglei_data_issues function.
+    Analyze the dataset and detect data quality issues including missing gaps, stuck periods, and flatlines.
 
     Parameters
     ----------
     df : pd.DataFrame
         Input eaglei data containing timestamps and values.
-    value_col : str
+    value_col : str, default='customers_out'
         Column containing outage/customer values.
-    timestamp_col : str
+    timestamp_col : str, default='run_start_time'
         Column containing timestamps.
-    baseline : float
-        Baseline for "stuck" detection.
-    freq : str
-        Expected reporting frequency (default 15min).
-    min_stuck_duration : str
-        Minimum duration for stuck detection (default 14D).
-    min_gap_duration : str
-        Minimum duration for missing data gap detection (default 3D).
-    min_flatline_duration : str
-        Minimum duration for flatline detection (default 3D).
+    baseline : int, default=1
+        Baseline value for "stuck" detection.
+    freq : str, default='15min'
+        Expected reporting frequency.
+    min_stuck_duration : str, default='14D'
+        Minimum duration for stuck detection.
+    min_gap_duration : str, default='3D'
+        Minimum duration for missing data gap detection.
+    min_flatline_duration : str, default='3D'
+        Minimum duration for flatline detection.
     
     Returns
     -------
-    Dict
-        Dictionary containing detected missing periods, stuck periods, and flatline periods.
+    dict
+        Dictionary containing detected issues with keys:
+        - 'missing_periods': DataFrame of significant missing data gaps
+        - 'stuck_periods': DataFrame of stuck value periods
+        - 'flatline_periods': DataFrame of flatline periods
     """
 
     df = df.copy()
@@ -2016,248 +1850,25 @@ def detect_eaglei_data_issues(df: pd.DataFrame,
     }
 
 
-def plot_eaglei_timeline(df: pd.DataFrame, 
-                         timestamp_col: str = "run_start_time", 
-                         value_col: str = "customers_out", 
-                         perform_zero_fill: bool = True, 
-                         date_range: Tuple | None = None, 
-                         log_y_scale: bool = True,
-                         overlay_issues: bool = False, 
-                         show_moving_average: bool = False,
-                        #  ma_window_length: int = int(60*24*60/15),
-                         ma_window_length: str = "60D",
-                         show_median: bool = False,
-                         plot_type: str = "step") -> None:
-    """
-    Function to plot EAGLEi time series data with options for zero-filling, date range filtering,
-    log scale, moving average, median, and overlaying detected data issues.
-    
-    Parameters:
-        df: The input EAGLEi dataframe.
-        timestamp_col: The name of the timestamp column.
-        value_col: The name of the value column.
-        perform_zero_fill: Whether to perform zero-filling for missing timestamps.
-        date_range: A tuple of (start_date, end_date) to filter the data.
-        log_y_scale: Whether to use logarithmic scale for the y-axis.
-        overlay_issues: Whether to overlay detected data issues on the plot.
-        show_moving_average: Whether to show moving average on the plot.
-        ma_window_length: The window length for moving average (e.g., "60D" for 60 days).
-        show_median: Whether to show median line on the plot.
-        plot_type: Type of plot - "line", "scatter", or "step".
-    
-    Returns:
-        None
-    """
-    
-    if plot_type not in ["line", "scatter", "step"]:
-        raise ValueError("plot_type must be one of 'line', 'scatter', or 'step'")
-
-    # check if timestamp_col and value_col are in the dataframe
-    if timestamp_col not in df.columns:
-        raise ValueError(f"Timestamp column {timestamp_col} not found in the dataframe.")
-    
-    if value_col not in df.columns:
-        raise ValueError(f"Value column {value_col} not found in the dataframe.")
-    
-    # check if timestamp_col is in datetime format
-    if not is_datetime64_any_dtype(df[timestamp_col]):
-        raise ValueError(f"Timestamp column {timestamp_col} is not in datetime format.")
-    
-    counties = df['county'].unique()
-    
-    if date_range is not None:
-        if not isinstance(date_range, tuple) or len(date_range) != 2:
-            raise ValueError("date_range must be a tuple of (start_date, end_date).")
-        start_date, end_date = date_range
-        df = df[(df[timestamp_col] >= start_date) & (df[timestamp_col] <= end_date)]
-        if df.empty:
-            raise ValueError("No data available in the specified date range.")
-        # print(f"Data filtered to date range {start_date} to {end_date}. Data points: {df.shape[0]}")
-    
-    
-    df_copy = df.copy()
-
-    if perform_zero_fill:
-        # reindex the dataframe by timestamp_col with a frequency of 15 minutes and fill missing values with 0
-        df_copy = df_copy.set_index(timestamp_col).asfreq('15min').fillna(0).reset_index()
-
-    _, ax = plt.subplots(figsize=(12, 5))
-
-    if plot_type == "line":
-        ax.plot(df_copy[timestamp_col], df_copy[value_col], label="Customers", color='darkorange', linewidth=1.0, zorder=1)
-    elif plot_type == "scatter":
-        ax.scatter(df_copy[timestamp_col], df_copy[value_col], label="Customers", color='darkorange', 
-                   zorder=1, s=5, alpha=1.0, linewidth=1.0, marker='+')
-    elif plot_type == "step":
-        # Step plot of values
-        ax.step(df_copy[timestamp_col], df_copy[value_col], where="post", label="Customers", color='darkorange', linewidth=1.0, zorder=1)
-    
-    ax.set_xlabel("Time")
-    ax.set_ylabel("Customers Interrupted")
-    
-    counties = df['county'].unique()
-    if len(counties) == 1:
-        ax.set_title(f"EAGLEi Time Series - {counties[0]} County", y=1.09)
-    elif len(counties) <= 5:
-        ax.set_title("EAGLEi Time Series - Counties: " + ", ".join(counties), y=1.09)
-    else:
-        ax.set_title(f"EAGLEi Time Series - {len(counties)} Counties", y=1.09)
-
-    # Overlay detected issues if requested
-    if overlay_issues:
-        issues = detect_eaglei_data_issues(df, 
-                                           value_col=value_col, 
-                                           timestamp_col=timestamp_col, 
-                                           baseline=1, freq="15min")
-        
-        if not issues['missing_periods'].empty:
-            min_dur = issues['missing_periods']['duration'].min().total_seconds()/3600/24
-            max_dur = issues['missing_periods']['duration'].max().total_seconds()/3600/24
-            gap_threshold_days_label = f"{len(issues['missing_periods'])} Data Gaps\n({min_dur:.1f} - {max_dur:.1f} days)"
-
-            for _, row in issues['missing_periods'].iterrows():
-                ax.axvspan(xmin=row['start'], xmax=row['end'], ymax=0.03, color='blue', alpha=0.9, zorder=2,
-                           label=gap_threshold_days_label if gap_threshold_days_label not in ax.get_legend_handles_labels()[1] else "")
-        
-        if not issues['flatline_periods'].empty:
-            min_dur = issues['flatline_periods']['duration'].min().total_seconds()/3600/24
-            max_dur = issues['flatline_periods']['duration'].max().total_seconds()/3600/24
-            flatline_periods_label = f"{len(issues['flatline_periods'])} Flatline Periods\n({min_dur:.1f} - {max_dur:.1f} days)"
-
-            for _, row in issues['flatline_periods'].iterrows():
-                ax.axvspan(xmin=row['start_time'], xmax=row['end_time'], ymax=0.03, color='violet', alpha=0.9, zorder=3,
-                           label=flatline_periods_label if flatline_periods_label not in ax.get_legend_handles_labels()[1] else "")
-        
-        if not issues['stuck_periods'].empty:
-            min_dur = issues['stuck_periods']['duration'].min().total_seconds()/3600/24
-            max_dur = issues['stuck_periods']['duration'].max().total_seconds()/3600/24
-            stuck_threshold_days_label = f"{len(issues['stuck_periods'])} Stuck Periods\n({min_dur:.1f} - {max_dur:.1f} days)"
-            # stuck_threshold_days_label = f"{len(issues['stuck_periods'])} Stuck Periods\n({issues['stuck_threshold'].total_seconds()/3600/24:.1f} days)"
-            
-            for _, row in issues['stuck_periods'].iterrows():
-                ax.axvspan(xmin=row['start_time'], xmax=row['end_time'], ymax=0.03, color='limegreen', alpha=0.9, zorder=3,
-                           label=stuck_threshold_days_label if stuck_threshold_days_label not in ax.get_legend_handles_labels()[1] else "")
-        ax.legend(loc='upper center', ncol=4, bbox_to_anchor=(0.5, 1.15))
-
-    # Overlay moving average if requested
-    ma_window_len = pd.Timedelta(ma_window_length)
-    if show_moving_average:
-        df_copy = df_copy.sort_values(timestamp_col).reset_index(drop=True)
-        if not perform_zero_fill:
-            df_copy = df_copy.set_index(timestamp_col).asfreq('15min').fillna(0).reset_index()
-        # Rolling average
-        df_copy["rolling_avg"] = df_copy.rolling(window=ma_window_len, min_periods=1, on=timestamp_col)[value_col].mean()
-        # convert the moving average to integer
-        df_copy["rolling_avg"] = df_copy["rolling_avg"].astype(int)
-        # convert the moving average values of 0 to 1 to avoid log(0) issues
-        df_copy["rolling_avg"] = df_copy["rolling_avg"].replace(0, 1)
-        ax.plot(df_copy[timestamp_col], df_copy["rolling_avg"],
-                color="black", linewidth=1.0, alpha=1.0, zorder=4,
-                label=f"Moving Average\n({(ma_window_len.total_seconds() / 3600 / 24):.0f} days window)")
-        if show_median:
-            df_copy["rolling_median"] = df_copy.rolling(window=ma_window_len, min_periods=1, on=timestamp_col)[value_col].median()
-            df_copy["rolling_median"] = df_copy["rolling_median"].astype(int)
-            df_copy["rolling_median"] = df_copy["rolling_median"].replace(0, 1)
-            ax.plot(df_copy[timestamp_col], df_copy["rolling_median"],
-                    color="purple", linewidth=1.0, alpha=1.0, zorder=5,
-                    label=f"_Moving Median\n({(ma_window_len.total_seconds() / 3600 / 24):.0f} days window)")
-        if overlay_issues:
-            ax.legend(loc='upper center', ncol=5, bbox_to_anchor=(0.5, 1.15))
-        else:
-            ax.legend(loc='upper center', ncol=2, bbox_to_anchor=(0.5, 1.15))
-
-    # Log scale if requested
-    if log_y_scale:
-        ax.set_yscale('log')
-        # ax.yaxis.set_major_formatter(custom_label_formatter)
-        # set a customer y-axis formatter which shows the actual number instead of scientific notation
-        ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: '{:,.0f}'.format(y) if y >= 1 else '{:,.1f}'.format(y)))
-        ax.set_ylabel("Customers Interrupted (log scale)")
-    plt.tight_layout()
-    plt.show()
-    # return df_sorted
-
-
-def create_stuck_periods_chart(eaglei_state_df: pd.DataFrame, 
-                               logx_axis: bool = False, 
-                               logy_axis: bool = False,
-                               filter_min_duration_days: int = 14):
-    """
-    Create a scatter plot of all stuck periods detected in the EAGLE-i data for each county.
-    
-    Parameters:
-    -----------
-    eaglei_state_df : pd.DataFrame
-        DataFrame containing EAGLE-i data for a specific state.
-    logx_axis : bool
-        Whether to use logarithmic scale for the x-axis.
-    logy_axis : bool
-        Whether to use logarithmic scale for the y-axis.
-    filter_min_duration_days : int
-        Minimum duration (in days) to filter stuck periods for plotting.
-
-    Returns:
-    --------
-    None
-    """
-    all_stuck_periods = {}
-    for c in eaglei_state_df['county'].unique():
-        stuck_periods = detect_eaglei_data_issues(eaglei_state_df[eaglei_state_df['county'] == c])['stuck_periods']
-        if not stuck_periods.empty:
-            all_stuck_periods[c] = stuck_periods
-    # create a dataframe from the dictionary
-    all_stuck_periods_df = pd.concat(all_stuck_periods).reset_index(level=1, drop=True).reset_index()
-    all_stuck_periods_df.columns = ['county', 'start', 'end', 'duration', 'stuck_value']
-    all_stuck_periods_df['duration_days'] = all_stuck_periods_df['duration'].dt.total_seconds() / 3600 / 24
-    all_stuck_periods_df = all_stuck_periods_df.sort_values(by='duration_days', ascending=False)
-    all_stuck_periods_df['stuck_value'] = all_stuck_periods_df['stuck_value'].astype(int)
-    # filter for stuck periods longer than 14 days
-    all_stuck_periods_df = all_stuck_periods_df[all_stuck_periods_df['duration_days'] >= filter_min_duration_days]  # filter for stuck periods longer than 14 days
-    if all_stuck_periods_df.empty:
-        print("No stuck periods detected.")
-        return
-
-    state_name = eaglei_state_df[constants.STATE_COL].iloc[0] if constants.STATE_COL in eaglei_state_df.columns else 'Unknown'
-    sns.displot(x='stuck_value', y='duration_days', 
-                data=all_stuck_periods_df, 
-                log_scale=(logx_axis, logy_axis), 
-                height=6, aspect=1)  #16/9
-    plt.title(f'All Stuck Periods in each county (EAGLE-i outages) - {state_name}\n(Only showing stuck periods longer than {filter_min_duration_days} days)')
-    if logx_axis:
-        plt.xlabel('Stuck Value (Customers Out) - log scale')
-        plt.gca().xaxis.set_major_formatter(FuncFormatter(lambda x, _: f'{int(x):,}'))
-    else:
-        plt.xlabel('Stuck Value (Customers Out)')
-    
-    if logy_axis:
-        plt.ylabel('Duration (Days) - log scale')
-        plt.gca().yaxis.set_major_formatter(FuncFormatter(lambda y, _: f'{int(y):,}'))
-    else:
-        plt.ylabel('Duration (Days)')
-    
-    plt.tight_layout()
-    plt.show()
-
-
 # ------------------------- County Adjacency Graphs -------------------------
 
 
 def load_counties_shapefile(shapefile_path: str = os.path.join(os.getcwd(), constants.MISC_DIR, 'geojson-counties-fips.json'),
                             shapefile_url: str = 'https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json') -> dict | None:
     """
-    Loads county shapefile data from a GeoJSON URL or local file.
+    Load county shapefile data from a GeoJSON URL or local file.
     
-    Parameters:
-    -----------
-    shapefile_url : str
-        URL to the GeoJSON file containing county boundaries
-    shapefile_path : str
-        Local path to the GeoJSON file containing county boundaries
+    Parameters
+    ----------
+    shapefile_path : str, default=os.path.join(os.getcwd(), constants.MISC_DIR, 'geojson-counties-fips.json')
+        Local path to the GeoJSON file containing county boundaries.
+    shapefile_url : str, default='https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json'
+        URL to the GeoJSON file containing county boundaries.
 
-    Returns:
-    --------
-    counties_shape_data : dict
-        GeoJSON FeatureCollection containing county boundaries
+    Returns
+    -------
+    dict or None
+        GeoJSON FeatureCollection containing county boundaries, or None if loading fails.
     """
     # First try to load from local file
     if os.path.exists(shapefile_path):
@@ -2280,18 +1891,26 @@ def load_counties_shapefile(shapefile_path: str = os.path.join(os.getcwd(), cons
 
 def create_county_adjacency_graph(state_fips_prefix: str | None = None) -> nx.Graph:
     """
-    Creates a NetworkX graph where nodes are counties in a state and edges represent 
+    Create a NetworkX graph where nodes are counties in a state and edges represent 
     neighboring counties with weights corresponding to boundary overlap length.
     
-    Parameters:
-    -----------
-    counties_shape_data : dict
-        GeoJSON FeatureCollection containing county boundaries
+    Parameters
+    ----------
+    state_fips_prefix : str or None, default=None
+        State FIPS code prefix to filter counties by state.
+        If None, raises ValueError.
         
-    Returns:
-    --------
-    G : networkx.Graph
-        Graph where nodes are county names and edge weights are boundary overlap lengths
+    Returns
+    -------
+    networkx.Graph
+        Graph where nodes are county names and edge weights are boundary overlap lengths.
+        
+    Raises
+    ------
+    ValueError
+        If state_fips_prefix is None.
+    RuntimeError
+        If county shapefile data cannot be loaded.
     """
 
     if state_fips_prefix is None:
@@ -2367,18 +1986,25 @@ def create_county_adjacency_graph(state_fips_prefix: str | None = None) -> nx.Gr
 
 def create_multi_state_county_adjacency_graph(county_fips: List[str]) -> nx.Graph:
     """
-    Creates a NetworkX graph where nodes are counties in multiple states and edges represent 
+    Create a NetworkX graph where nodes are counties in multiple states and edges represent 
     neighboring counties with weights corresponding to boundary overlap length.
     
-    Parameters:
-    -----------
-    county_fips : List[str]
-        List of county FIPS codes to filter counties
+    Parameters
+    ----------
+    county_fips : list of str
+        List of county FIPS codes to filter counties.
         
-    Returns:
-    --------
-    G : networkx.Graph
-        Graph where nodes are county names and edge weights are boundary overlap lengths
+    Returns
+    -------
+    networkx.Graph
+        Graph where nodes are county names and edge weights are boundary overlap lengths.
+        
+    Raises
+    ------
+    ValueError
+        If county_fips is empty.
+    RuntimeError
+        If county shapefile data cannot be loaded.
     """
 
     if not county_fips:
@@ -2455,13 +2081,13 @@ def analyze_county_graph(G: nx.Graph) -> None:
     """
     Analyze and display basic statistics about the county adjacency graph.
     
-    Parameters:
-    -----------
+    Parameters
+    ----------
     G : networkx.Graph
-        County adjacency graph
+        County adjacency graph.
 
-    Returns:
-    --------
+    Returns
+    -------
     None
     """
     print(f"County Adjacency Graph Statistics:")
@@ -2491,17 +2117,21 @@ def visualize_county_graph(G: nx.Graph, pos: Any = None, figsize: Tuple = (9, 6)
     """
     Visualize the county adjacency graph.
     
-    Parameters:
-    -----------
+    Parameters
+    ----------
     G : networkx.Graph
-        County adjacency graph
-    pos : dict, optional
-        Node positions for visualization
-    figsize : tuple
-        Figure size for the plot
+        County adjacency graph.
+    pos : dict or None, default=None
+        Node positions for visualization. If None, circular layout is used.
+    figsize : tuple, default=(9, 6)
+        Figure size for the plot as (width, height).
+    save : bool, default=False
+        Whether to save the figure to a file.
+    save_path : str or None, default=None
+        Path to save the figure. Required if save=True.
     
-    Returns:
-    --------
+    Returns
+    -------
     None
     """
     
@@ -2542,37 +2172,6 @@ def visualize_county_graph(G: nx.Graph, pos: Any = None, figsize: Tuple = (9, 6)
         plt.show()
 
 
-def shortest_path_between_counties(G, county_a, county_b):
-    """
-    Find the shortest path between two counties in the adjacency graph.
-    
-    Parameters:
-    -----------
-    G : networkx.Graph
-        County adjacency graph
-    county_a : str
-        Starting county name
-    county_b : str
-        Ending county name
-    
-    Returns:
-    --------
-    None
-    """
-    # Find the shortest path between two counties
-    try:
-        path = nx.shortest_path(G, county_a, county_b)
-        print(f"Shortest path from {county_a} to {county_b}: {' -> '.join(path)}")
-        
-        # Calculate path length based on boundary overlaps
-        path_weight = nx.shortest_path_length(G, county_a, county_b, weight='weight')
-        print(f"Total boundary overlap distance: {path_weight:.2f} km")
-    except nx.NetworkXNoPath:
-        print("No path found between the counties")
-    except nx.NodeNotFound as e:
-        print(f"County not found: {e}")
-
-
 # ------------------------- Spatiotemporal Events Extraction -------------------------
 
 def find_time_overlapping_groups(df_with_all_counties: pd.DataFrame, 
@@ -2583,20 +2182,21 @@ def find_time_overlapping_groups(df_with_all_counties: pd.DataFrame,
     """
     Identify and label overlapping events across multiple counties based only on time.
     
-    Parameters:
-    -----------
+    Parameters
+    ----------
     df_with_all_counties : pd.DataFrame
         DataFrame containing event data for multiple counties of a single state.
-    event_col : str
+    event_col : str, default='event_number_ac_threshold_30'
         Column name of the column containing county-level events' event numbers for each county.
-    new_event_col : str
+    new_event_col : str, default='event_number_temporal'
         Column name for the new temporal event numbers to be created.
-    timestamp_col : str
+    timestamp_col : str, default=constants.TIMESTAMP_COL
         Column name of the timestamp column.
-    county_col : str
+    county_col : str, default=constants.COUNTY_COL
         Column name of the county column.
-    Returns:
-    --------
+        
+    Returns
+    -------
     pd.DataFrame
         DataFrame with an additional column for temporal event numbers.
     """
@@ -2650,19 +2250,19 @@ def get_neighbors_at_level(graph: nx.Graph, county: str, level: int) -> set:
     """
     Get all neighbors of a county up to a specified level.
     
-    Parameters:
-    -----------
+    Parameters
+    ----------
     graph : networkx.Graph
-        County adjacency graph
+        County adjacency graph.
     county : str
-        County name
+        County name.
     level : int
-        Maximum neighbor level (1 = immediate neighbors, 2 = neighbors + their neighbors, etc.)
+        Maximum neighbor level (1 = immediate neighbors, 2 = neighbors + their neighbors, etc.).
         
-    Returns:
-    --------
+    Returns
+    -------
     set
-        Set of county names within the specified neighbor level
+        Set of county names within the specified neighbor level.
     """
     if county not in graph:
         return {county}
@@ -2859,23 +2459,26 @@ def plot_event_on_map(events_df,
     """
     Wrapper function to plot a specific event on a map.
     
-    Parameters:
-    -----------
+    Parameters
+    ----------
     events_df : pd.DataFrame
-        Events dataframe (either time-only or spatio-temporal)
+        Events dataframe (either time-only or spatio-temporal).
     event_id : int
-        Event ID to plot
+        Event ID to plot.
     event_col : str
-        Column name for event IDs in events_df
-    counties_geojson : dict
-        GeoJSON FeatureCollection containing Massachusetts county boundaries
-    county_wide_events_col : str
-        Column name for county-wide events in events_df
+        Column name for event IDs in events_df.
+    counties_geojson : dict or None, default=None
+        GeoJSON FeatureCollection containing county boundaries.
+        If None, loads default shapefile.
+    county_wide_events_col : str, default='event_number_ac_threshold_30'
+        Column name for county-wide events in events_df.
+    state_fips_code : str or None, default=None
+        State FIPS code for filtering counties. If None, inferred from events_df.
         
-    Returns:
-    --------
-    fig : matplotlib.figure.Figure
-        The generated map figure
+    Returns
+    -------
+    None
+        Displays the generated map figure.
     """
     figsize = (12, 10)
     fig, ax = plt.subplots(figsize=figsize)
@@ -2891,27 +2494,33 @@ def _create_event_timeline(events_df,
                            max_counties=14, 
                            plotting_axis=None):
     """
-    Plot a timeline showing event start and end times by county within a specified time range.
+    Plot a timeline showing event start and end times by county.
     
-    Parameters:
-    -----------
-    time_events_df : pandas.DataFrame
-        DataFrame containing event data with columns: county, run_start_time, event_number
-    start_time : str or datetime
-        Start time for the timeline (e.g., '2018-03-01' or '2018-03-01 12:00:00')
-    end_time : str or datetime  
-        End time for the timeline (e.g., '2018-03-10' or '2018-03-10 12:00:00')
+    Parameters
+    ----------
+    events_df : pd.DataFrame
+        DataFrame containing event data with columns: county, run_start_time, event_number.
+    event_id : int
+        Event ID to plot timeline for.
+    event_col_to_identify : str
+        Column name used to identify the event (e.g., 'event_number_temporal').
     event_col : str, default='event_number_ac_threshold_30'
-        Column name containing event numbers
-    figsize : tuple, default=(15, 10)
-        Figure size (width, height)
-    max_counties : int, optional
-        Maximum number of counties to display (displays counties with most events if limited)
+        Column name containing county-level event numbers.
+    max_counties : int, default=14
+        Maximum number of counties to display. If exceeded, shows counties with highest 
+        customer impact.
+    plotting_axis : matplotlib.axes.Axes or None, default=None
+        Axis to plot on. If None, raises ValueError.
     
-    Returns:
-    --------
-    matplotlib.figure.Figure
-        The timeline plot figure
+    Returns
+    -------
+    None
+        Plots the timeline on the provided axis.
+        
+    Raises
+    ------
+    ValueError
+        If plotting_axis is None.
     """
     if plotting_axis is None:
         raise ValueError("plotting_axis must be provided, or use the plot_event_timeline function which creates its own figure and axis.")
@@ -3102,6 +2711,44 @@ def segregate_by_space(events_df,
                        customer_column=constants.CUSTOMERS_COL,
                        verbose=0,
                        time_overlap_method='outage_process_overlap') -> pd.DataFrame:
+    """
+    Segregate temporal events into spatiotemporal groups based on spatial adjacency and time overlap.
+    
+    Parameters
+    ----------
+    events_df : pd.DataFrame
+        Events dataframe containing county-level event data.
+    temporal_event_number : int
+        Temporal event ID to segregate.
+    temporal_event_col : str, default='event_number_temporal'
+        Column name for temporal event IDs.
+    county_event_col : str, default='event_number_ac_threshold_30'
+        Column name for county-level event IDs.
+    neighbour_level : int, default=1
+        Neighbor level for spatial adjacency (1 = immediate neighbors).
+    graph_of_counties : networkx.Graph or None, default=None
+        County adjacency graph. Required parameter.
+    timestamp_column : str, default=constants.TIMESTAMP_COL
+        Column name for timestamps.
+    customer_column : str, default=constants.CUSTOMERS_COL
+        Column name for customer counts.
+    verbose : int, default=0
+        Verbosity level for logging.
+    time_overlap_method : str, default='outage_process_overlap'
+        Method for determining temporal overlap. Options:
+        - 'outage_process_overlap': Based on outage process end time
+        - 'standard_overlap': Standard time range overlap
+    
+    Returns
+    -------
+    pd.DataFrame
+        Events dataframe with added 'event_number_spatiotemporal' column.
+        
+    Raises
+    ------
+    ValueError
+        If graph_of_counties is None.
+    """
 
     spatiotemporal_event_col_name = 'event_number_spatiotemporal'
 
@@ -3184,9 +2831,6 @@ def segregate_by_space(events_df,
     return event_data
 
 
-
-
-
 def apply_spatiotemporal_grouping(combined, graph_of_counties, 
                                    temporal_event_col='event_number_multi_county',
                                    county_event_col='event_number_eaglei',
@@ -3196,22 +2840,31 @@ def apply_spatiotemporal_grouping(combined, graph_of_counties,
     """
     Apply spatiotemporal grouping to all temporal events in the dataset.
     
-    Parameters:
-    -----------
+    Parameters
+    ----------
     combined : xarray.Dataset
-        Your combined dataset
+        Combined dataset containing event data.
     graph_of_counties : networkx.Graph
-        Adjacency graph of counties
-    temporal_event_col : str
-        Column name for temporal events (e.g., 'event_number_multi_county')
-    county_event_col : str
-        Column name for county events (e.g., 'event_number_eaglei')
-    neighbour_level : int
-        Neighbor level for spatial grouping
-    time_overlap_method : str
-        'outage_process_overlap' or 'standard_overlap'
-    verbose : int
-        Verbosity level
+        Adjacency graph of counties.
+    temporal_event_col : str, default='event_number_multi_county'
+        Column name for temporal events.
+    county_event_col : str, default='event_number_eaglei'
+        Column name for county events.
+    neighbour_level : int, default=1
+        Neighbor level for spatial grouping.
+    time_overlap_method : str, default='outage_process_overlap'
+        Method for temporal overlap detection:
+        - 'outage_process_overlap': Based on outage process end time
+        - 'standard_overlap': Standard time range overlap
+    verbose : int, default=1
+        Verbosity level for logging.
+        
+    Returns
+    -------
+    tuple
+        (combined_with_spatiotemporal, dataframe_with_spatiotemporal)
+        - combined_with_spatiotemporal: xarray.Dataset with spatiotemporal event column
+        - dataframe_with_spatiotemporal: pd.DataFrame with spatiotemporal event data
     """
     
     # Step 1: Convert xarray to DataFrame (excluding 0 and -1)
@@ -3272,6 +2925,20 @@ def apply_spatiotemporal_grouping(combined, graph_of_counties,
 def prepare_dataframe_for_spatiotemporal(combined, temporal_event_col, county_event_col):
     """
     Convert xarray to DataFrame with required columns, excluding 0 and -1.
+    
+    Parameters
+    ----------
+    combined : xarray.Dataset
+        Combined dataset containing event data.
+    temporal_event_col : str
+        Column name for temporal events.
+    county_event_col : str
+        Column name for county events.
+        
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns: time, county, customers_out, temporal_event_col, county_event_col.
     """
     # Extract data
     temporal_events = combined[temporal_event_col].values  # (county, time)
@@ -3310,6 +2977,18 @@ def make_spatiotemporal_globally_unique(df, temporal_event_col):
     
     The segregate_by_space function assigns spatiotemporal numbers starting from 1
     for each temporal event. This function makes them globally unique.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame with local spatiotemporal event numbers.
+    temporal_event_col : str
+        Column name for temporal events.
+        
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with globally unique 'event_number_mc_spatiotemporal' column.
     """
     next_global_id = 1
     spatiotemporal_mapping = {}
@@ -3343,6 +3022,20 @@ def make_spatiotemporal_globally_unique(df, temporal_event_col):
 def _merge_results_back(combined, df_result, new_event_column_name='event_number_mc_spatiotemporal'):
     """
     Merge the new event numbers from pandas DataFrame back into xarray dataset.
+    
+    Parameters
+    ----------
+    combined : xarray.Dataset
+        Combined dataset to add event data to.
+    df_result : pd.DataFrame
+        DataFrame containing event results with county, time, and event number columns.
+    new_event_column_name : str, default='event_number_mc_spatiotemporal'
+        Name for the new event column to add to the dataset.
+        
+    Returns
+    -------
+    xarray.Dataset
+        Dataset with added event column.
     """
     # Create a new array initialized with 0
     n_counties = len(combined['county'])
@@ -3377,10 +3070,37 @@ def apply_spatiotemporal_grouping_optimized(combined, graph_of_counties,
                                              verbose=1):
     """
     Optimized version that processes all temporal events together.
+    
     This is more efficient as it:
     1. Pre-computes neighbor relationships once
     2. Vectorizes time overlap calculations where possible
     3. Builds the entire graph in one pass
+    
+    Parameters
+    ----------
+    combined : xarray.Dataset
+        Combined dataset containing event data.
+    graph_of_counties : networkx.Graph
+        Adjacency graph of counties.
+    temporal_event_col : str, default='event_number_multi_county'
+        Column name for temporal events.
+    county_event_col : str, default='event_number_eaglei'
+        Column name for county events.
+    neighbour_level : int, default=1
+        Neighbor level for spatial grouping.
+    time_overlap_method : str, default='outage_process_overlap'
+        Method for temporal overlap detection:
+        - 'outage_process_overlap': Based on outage process end time
+        - 'standard_overlap': Standard time range overlap
+    verbose : int, default=1
+        Verbosity level for logging.
+        
+    Returns
+    -------
+    tuple
+        (combined_with_spatiotemporal, dataframe_with_spatiotemporal)
+        - combined_with_spatiotemporal: xarray.Dataset with spatiotemporal event column
+        - dataframe_with_spatiotemporal: pd.DataFrame with spatiotemporal event data
     """
     
     print("Converting xarray to DataFrame...")
@@ -3500,162 +3220,39 @@ def apply_spatiotemporal_grouping_optimized(combined, graph_of_counties,
     return combined, df
 
 
-# def apply_spatiotemporal_grouping_optimized2(combined, graph_of_counties,
-#                                                 temporal_event_col='event_number_multi_county',
-#                                                 county_event_col='event_number_eaglei',
-#                                                 neighbour_level=1,
-#                                                 time_overlap_method='outage_process_overlap',
-#                                                 verbose=1):
-#     """
-#     Optimized version - Another variant
-#     """
-    
-#     print("Converting xarray to DataFrame...")
-#     df = prepare_dataframe_for_spatiotemporal(combined, temporal_event_col, county_event_col)
-    
-#     # Sort by time to ensure temporal ordering
-#     df = df.sort_values('time').reset_index(drop=True)
-    
-#     print("\nPre-computing county neighbors...")
-#     county_neighbors = {}
-#     for county in df['county'].unique():
-#         county_neighbors[county] = get_neighbors_at_level(graph_of_counties, county, level=neighbour_level)
-    
-#     # Process each temporal event separately (matching original)
-#     temporal_events = df[temporal_event_col].unique()
-#     temporal_events = temporal_events[temporal_events > 0]
-    
-#     all_spatiotemporal_assignments = {}
-#     next_global_id = 1
-    
-#     for idx, temporal_event_num in enumerate(temporal_events):
-#         if verbose > 0 and idx % 100 == 0:
-#             print(f"  Processing temporal event {idx+1}/{len(temporal_events)}")
-        
-#         # Filter for this temporal event
-#         event_data = df[df[temporal_event_col] == temporal_event_num].copy()
-        
-#         # Compute time ranges exactly like original
-#         county_events_in_event = event_data.groupby(['county', county_event_col]).agg({
-#             'time': ['min', 'max']
-#         }).sort_values(('time', 'min'))
-        
-#         county_events_in_event = county_events_in_event.reset_index(drop=False)
-#         county_events_in_event.columns = ['county', county_event_col, 'time_min', 'time_max']
-        
-#         # Compute outage process end time for each county event
-#         def compute_outage_process_end(row):
-#             county_event_data = event_data[
-#                 (event_data['county'] == row['county']) & 
-#                 (event_data[county_event_col] == row[county_event_col])
-#             ].sort_values('time')
-            
-#             customers = county_event_data['customers_out'].values
-#             times = county_event_data['time'].values
-            
-#             # Match original logic exactly
-#             if len(set(customers)) == 1:
-#                 return times[0]
-            
-#             # Compute diffs
-#             diffs = np.diff(customers)
-#             diffs = np.insert(diffs, 0, 1)  # Add 1 at the beginning like original
-            
-#             # Find last positive diff
-#             positive_indices = np.where(diffs > 0)[0]
-#             if len(positive_indices) > 0:
-#                 idx = positive_indices[-1]
-#                 return times[idx]
-#             else:
-#                 return times[0]
-        
-#         county_events_in_event['outage_process_end'] = county_events_in_event.apply(
-#             compute_outage_process_end, axis=1
-#         )
-        
-#         # Build graph for this temporal event
-#         subgraph = nx.Graph()
-#         subgraph.add_nodes_from(county_events_in_event[county_event_col].values)
-        
-#         # Check pairs exactly like original
-#         for i in range(len(county_events_in_event)):
-#             for j in range(len(county_events_in_event)):
-#                 if i >= j:
-#                     continue
-                
-#                 row_i = county_events_in_event.iloc[i]
-#                 row_j = county_events_in_event.iloc[j]
-                
-#                 # Skip same county (addressing the issue from earlier review)
-#                 if row_i['county'] == row_j['county']:
-#                     continue
-                
-#                 # Check spatial condition
-#                 if row_j['county'] not in county_neighbors[row_i['county']]:
-#                     continue
-                
-#                 # Check temporal condition - EXACTLY as original
-#                 if time_overlap_method == 'outage_process_overlap':
-#                     # Original: (event_i['min'] <= event_j['max']) and (event_j['min'] <= event_i['outage_process_end_at'])
-#                     overlaps = (row_i['time_min'] <= row_j['time_max']) and \
-#                               (row_j['time_min'] <= row_i['outage_process_end'])
-#                 else:  # standard_overlap
-#                     overlaps = (row_i['time_min'] <= row_j['time_max']) and \
-#                               (row_i['time_max'] >= row_j['time_min'])
-                
-#                 if overlaps:
-#                     subgraph.add_edge(row_i[county_event_col], row_j[county_event_col])
-        
-#         # Find connected components
-#         connected_components = list(nx.connected_components(subgraph))
-        
-#         # Assign global IDs
-#         for component in connected_components:
-#             for county_event_id in component:
-#                 all_spatiotemporal_assignments[county_event_id] = next_global_id
-#             next_global_id += 1
-    
-#     # Apply assignments to DataFrame
-#     df['event_number_mc_spatiotemporal'] = df[county_event_col].map(all_spatiotemporal_assignments)
-    
-#     print(f"\nAssigned {next_global_id - 1} globally unique spatiotemporal events")
-    
-#     # Merge back into xarray
-#     print("Merging results back into xarray dataset...")
-#     combined = _merge_results_back(combined, df, 'event_number_mc_spatiotemporal')
-    
-#     return combined, df
-
-
-
-
-
-
 def _create_eaglei_multicounty_performance_curve(events_df: pd.DataFrame, 
                                                  event_number: int, 
                                                  event_method: str ='spatiotemporal', 
                                                  timestamp_column: str =constants.TIMESTAMP_COL, 
                                                  customer_column: str =constants.CUSTOMERS_COL) -> go.Figure:
     """
-    Plot performance curve of an event that involves multiple counties.
-    That include temporally overlapping events and spatio-temporal events.
+    Create performance curve for an event involving multiple counties.
+    
+    Generates an interactive Plotly figure showing performance curves and stacked bar charts
+    for events spanning multiple counties, including temporally overlapping and spatiotemporal events.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     events_df : pd.DataFrame
-        DataFrame containing event data with columns: county, run_start_time, customers_out, event_number
+        DataFrame containing event data with columns: county, timestamp, customers_out, event_number.
     event_number : int
-        Event number to plot
+        Event number to plot.
     event_method : str, default='spatiotemporal'
-        Method used for event detection (for labeling purposes)
+        Method used for event detection (used for labeling).
     timestamp_column : str, default=constants.TIMESTAMP_COL
-        Column name for the timestamp
+        Column name for the timestamp.
     customer_column : str, default=constants.CUSTOMERS_COL
-        Column name for the customer count
+        Column name for the customer count.
 
-    Returns:
+    Returns
     -------
-    None
+    go.Figure
+        Plotly figure object with the performance curve.
+        
+    Raises
+    ------
+    ValueError
+        If event column not found, required columns missing, no data for event, or event involves <2 counties.
     """
 
     # Determine the correct event column based on the method
@@ -3800,168 +3397,67 @@ def _create_eaglei_multicounty_performance_curve(events_df: pd.DataFrame,
     return fig
 
 
-def plot_eaglei_multicounty_performance_curve(events_df, event_number, event_method='spatiotemporal', timestamp_column=constants.TIMESTAMP_COL, customer_column=constants.CUSTOMERS_COL):
-    # Create the figure
-    fig = _create_eaglei_multicounty_performance_curve(events_df, event_number, event_method=event_method, timestamp_column=timestamp_column, customer_column=customer_column)
-    # Display the figure
-    fig.show()
-
-
-def save_spatiotemporal_event_curves(events_df, 
-                          temporal_event_id, 
-                          temporal_event_col='event_number_temporal',
-                          spatiotemporal_event_col='event_number_spatiotemporal', 
-                          pdf_path=None):
+def plot_eaglei_multicounty_performance_curve(events_df: pd.DataFrame, 
+                                              event_number: int, 
+                                              event_method: str = 'spatiotemporal', 
+                                              timestamp_column: str = constants.TIMESTAMP_COL, 
+                                              customer_column: str = constants.CUSTOMERS_COL) -> None:
     """
-    Save performance curves of spatiotemporal events within a specified temporal event to a single-page PDF.
+    Plot and display multicounty performance curve for an event.
     
-    Parameters:
-    -----------
+    Parameters
+    ----------
     events_df : pd.DataFrame
-        DataFrame containing event data with spatiotemporal event numbers
-    temporal_event_id : int
-        Temporal event ID to plot
-    temporal_event_col : str
-        Column name for temporal event numbers
-    spatiotemporal_event_col : str
-        Column name for spatiotemporal event numbers
-    pdf_path : str, optional
-        Path to save the PDF file. If None, saves to 'RESULTS_DIR/curves_of_event_{temporal_event_id}.pdf'
-    """
-    # Filter data for the specified temporal event
-    event_data = events_df[events_df[temporal_event_col] == temporal_event_id]
-    
-    # Get unique spatiotemporal event IDs within this temporal event
-    spatiotemporal_event_ids = event_data[spatiotemporal_event_col].unique()
-    
-    num_spatiotemporal_events = len(spatiotemporal_event_ids)
-
-    if num_spatiotemporal_events == 1:
-        print("Only one spatiotemporal event found; no need to plot multiple subplots.")
-        return
-    
-    if pdf_path == None:
-        cwd = os.getcwd()
-        pdf_path = os.path.join(cwd , constants.RESULTS_DIR, f'curves_of_event_{temporal_event_id}.pdf')
-
-    with PdfPages(pdf_path) as pdf:
-
-        # Create a plot with 2 rows and 1 column
-        fig, axes = plt.subplots(2, 1, sharex=True, sharey=False, figsize=(20, 15))
-        axes = axes.flatten()
-
-        event_data_agg = event_data.groupby(constants.TIMESTAMP_COL).agg({constants.CUSTOMERS_COL:'sum', temporal_event_col:'min'}).reset_index().sort_values(constants.TIMESTAMP_COL, ascending=True)
-        outages_full, restores_full, performance_process_full = get_eaglei_processes(event_data_agg, temporal_event_id, event_method='temporal')
-        outage_process_full = [(outages_full[i][0], v) for i, v in enumerate(np.cumsum([o[1] for o in outages_full]))]
-        restore_process_full = [(restores_full[i][0], v) for i, v in enumerate(np.cumsum([r[1] for r in restores_full]))]
-        # Add 0 for the first time step to the outage and restore processes
-        outage_process_full.insert(0, (outage_process_full[0][0], 0))  
-        restore_process_full.insert(0, (outage_process_full[0][0], 0))
-        # Add the last time step to the outage process
-        outage_process_full.append((restore_process_full[-1][0], restore_process_full[-1][1]))  
-        # Remove the first time step of the performance process
-        performance_process_full = performance_process_full[1:]  # Remove the first time step (0, 0)
-        performance_process_full.insert(0, (performance_process_full[0][0], 0))
-        # create a step plot of the outages
-        axes[0].step([row[0] for row in outage_process_full], [row[1] for row in outage_process_full], where='post', label='Outage Curve', color=constants.COLOR_OUTAGE_CURVE)
-        axes[0].step([row[0] for row in restore_process_full], [row[1] for row in restore_process_full], where='post', label='Restore Curve', color=constants.COLOR_RESTORE_CURVE)
-        axes[0].step([row[0] for row in performance_process_full], [-row[1] for row in performance_process_full], where='post', label='Performance Curve', color=constants.COLOR_PERFORMANCE_CURVE)
-        axes[0].set_ylabel('Number of Customers')
-        # axes[0].set_xlabel('Time')
-        axes[0].set_title(f'Complete Temporal Event # {temporal_event_id}', fontsize=12)
-        axes[0].axhline(y=0, color='black', linewidth=0.5)  # show a horizontal line at 0
-        # Format x-axis for better readability
-        xtick_formatter = mdates.DateFormatter('%m-%d-%y\n%H:%M')
-        axes[0].xaxis.set_major_formatter(xtick_formatter)
-        # Get the first and last x-values
-        first_x_tick = min([row[0] for row in performance_process_full])
-        last_x_tick = max([row[0] for row in performance_process_full])
-        # Calculate three intermediate tick positions (e.g., the midpoint)
-        time_diff_secs = (last_x_tick - first_x_tick).total_seconds()
-        intermediate_x_ticks = [first_x_tick + pd.Timedelta(seconds=time_diff_secs * i / 15) for i in range(1, 15)]
-        # Set the x-ticks to only these three positions
-        axes[0].set_xticks([first_x_tick, *intermediate_x_ticks, last_x_tick])
-
-        # Create single plot for the complete spatiotemporal event
-        event_data_agg = event_data.groupby(constants.TIMESTAMP_COL).agg({constants.CUSTOMERS_COL:'sum', temporal_event_col:'min'}).reset_index().sort_values(constants.TIMESTAMP_COL, ascending=True)
-        outages_full, restores_full, performance_process_full = get_eaglei_processes(event_data_agg, temporal_event_id, event_method='temporal')
-        outage_process_full = [(outages_full[i][0], v) for i, v in enumerate(np.cumsum([o[1] for o in outages_full]))]
-        restore_process_full = [(restores_full[i][0], v) for i, v in enumerate(np.cumsum([r[1] for r in restores_full]))]
-        # Add 0 for the first time step to the outage and restore processes
-        outage_process_full.insert(0, (outage_process_full[0][0], 0))  
-        restore_process_full.insert(0, (outage_process_full[0][0], 0))
-        # Add the last time step to the outage process
-        outage_process_full.append((restore_process_full[-1][0], restore_process_full[-1][1]))  
-        # Remove the first time step of the performance process
-        performance_process_full = performance_process_full[1:]  # Remove the first time step (0, 0)
-        performance_process_full.insert(0, (performance_process_full[0][0], 0))
-
-        for spatiotemporal_event_id in spatiotemporal_event_ids:
-            spatiotemporal_event_data = event_data[event_data[spatiotemporal_event_col] == spatiotemporal_event_id]
-            spatiotemporal_event_data = spatiotemporal_event_data.groupby(constants.TIMESTAMP_COL).agg({constants.CUSTOMERS_COL:'sum', spatiotemporal_event_col:'min'}).reset_index().sort_values(constants.TIMESTAMP_COL, ascending=True)
-            outages, restores, performance_process = get_eaglei_processes(spatiotemporal_event_data, spatiotemporal_event_id, event_method='spatiotemporal')
-
-            outage_process = [(outages[i][0], v) for i, v in enumerate(np.cumsum([o[1] for o in outages]))]
-            restore_process = [(restores[i][0], v) for i, v in enumerate(np.cumsum([r[1] for r in restores]))]
-            
-            # Add 0 for the first time step to the outage and restore processes
-            outage_process.insert(0, (outage_process[0][0], 0))  
-            restore_process.insert(0, (outage_process[0][0], 0))
-            
-            # Add the last time step to the outage process
-            outage_process.append((restore_process[-1][0], restore_process[-1][1]))  
-            
-            # Remove the first time step of the performance process
-            performance_process = performance_process[1:]  # Remove the first time step (0, 0)
-            performance_process.insert(0, (performance_process[0][0], 0))  
-
-            # create a step plot of the performance process
-            axes[1].step([row[0] for row in performance_process], [row[1] for row in performance_process], where='post', label=f'Performance Curve {spatiotemporal_event_id}')
-
-        axes[1].set_ylabel('Number of Customers (Log Scale)')
-        axes[1].set_xlabel('Time')
-        axes[1].set_title(f'Performance Curves of all Spatiotemporal Events of the Temporal Event # {temporal_event_id}', fontsize=12)
-
-        axes[1].set_yscale('log')
-
-        # Format x-axis for better readability
-        xtick_formatter = mdates.DateFormatter('%m-%d-%y\n%H:%M')
-        axes[1].xaxis.set_major_formatter(xtick_formatter)
+        DataFrame containing event data.
+    event_number : int
+        Event number to plot.
+    event_method : str, default='spatiotemporal'
+        Method used for event detection.
+    timestamp_column : str, default=constants.TIMESTAMP_COL
+        Column name for the timestamp.
+    customer_column : str, default=constants.CUSTOMERS_COL
+        Column name for the customer count.
         
-        plt.tight_layout()
-        # plt.show()
-        pdf.savefig(fig)
-        plt.close(fig)
-
-    print(f"Saved plots to {pdf_path}")
+    Returns
+    -------
+    None
+        Displays the figure in the browser.
+    """
 
 
 def _ordinal(n: int) -> str:
     """
-    Return the ordinal representation of an integer (e.g. 1 -> "1st", 2 -> "2nd", 11 -> "11th").
+    Return the ordinal representation of an integer.
+    
+    Examples: 1 -> "1st", 2 -> "2nd", 11 -> "11th", 43 -> "43rd"
 
-    Args:
-        n: integer to convert
+    Parameters
+    ----------
+    n : int
+        Integer to convert.
 
-    Returns:
-        str: ordinal string
+    Returns
+    -------
+    str
+        Ordinal string representation.
 
-    Raises:
-        TypeError: if n is not an int
-
-    Examples:
-        >>> ordinal(1)
-        '1st'
-        >>> ordinal(2)
-        '2nd'
-        >>> ordinal(9)
-        '9th'
-        >>> ordinal(11)
-        '11th'
-        >>> ordinal(43)
-        '43rd'
-        >>> ordinal(-1)
-        '-1st'
+    Raises
+    ------
+    TypeError
+        If n is not an int.
+        
+    Examples
+    --------
+    >>> _ordinal(1)
+    '1st'
+    >>> _ordinal(2)
+    '2nd'
+    >>> _ordinal(11)
+    '11th'
+    >>> _ordinal(43)
+    '43rd'
+    >>> _ordinal(-1)
+    '-1st'
     """
     if not isinstance(n, int):
         raise TypeError("ordinal() expects an int")
@@ -3984,27 +3480,37 @@ def _ordinal(n: int) -> str:
     return f"{n}{suffix}"
 
 
-def save_plots_to_pdf(events_df, 
-                      event_id, 
-                      graph_of_counties,
-                      overlap_method='outage_process_overlap', 
-                      county_event_col='event_number_ac_threshold_30',
-                      pdf_path=None):
+def save_plots_to_pdf(events_df: pd.DataFrame, 
+                      event_id: int, 
+                      graph_of_counties: nx.Graph,
+                      overlap_method: str = 'outage_process_overlap', 
+                      county_event_col: str = 'event_number_ac_threshold_30',
+                      pdf_path: str | None = None) -> None:
     """
-    Save plots of specified events to a PDF file.
+    Save event plots (maps and timelines) to a PDF file.
     
-    Parameters:
-    -----------
+    Creates a comprehensive PDF report containing event maps, timelines, and performance curves
+    for both temporal and spatiotemporal events.
+    
+    Parameters
+    ----------
     events_df : pd.DataFrame
-        Events dataframe (either time-only or spatio-temporal)
+        Events dataframe containing temporal event data.
     event_id : int
-        event ID to plot
-    method : str
-        Type of event: 'time_only' or 'spatiotemporal'
-    customer_threshold : int
-        Customer threshold used for event detection
-    pdf_path : str
-        Path to save the PDF file
+        Event ID to plot.
+    graph_of_counties : nx.Graph
+        County adjacency graph for spatiotemporal analysis.
+    overlap_method : str, default='outage_process_overlap'
+        Method for determining temporal overlap between events.
+    county_event_col : str, default='event_number_ac_threshold_30'
+        Column name for county-level event numbers.
+    pdf_path : str or None, default=None
+        Path to save the PDF file. If None, saves to default results directory.
+        
+    Returns
+    -------
+    None
+        Saves PDF to specified path and prints confirmation message.
     """
 
     if pdf_path == None:
@@ -4103,6 +3609,43 @@ def save_plots_to_pdf(events_df,
 
 # A class which can load data for a specific state
 class EagleiStateProcessor:
+    """
+    Processor class for handling EAGLEi power outage data at the state level.
+    
+    This class loads and processes EAGLE-i data for a specific state, managing gap filling
+    and event extraction across all counties in the state.
+    
+    Parameters
+    ----------
+    state_name : str
+        Name of the state to process.
+    verbose : int, default=1
+        Verbosity level for logging.
+        - 0: No print outputs
+        - 1: Basic print outputs
+        - 2: Detailed print outputs
+        
+    Attributes
+    ----------
+    eaglei_df : pd.DataFrame
+        EAGLE-i data for all counties in the state.
+    county_wide_customers : pd.DataFrame
+        Total customers per county.
+    state_fips_code : str
+        FIPS code for the state.
+    county_adjacency_graph : networkx.Graph
+        Adjacency graph of counties in the state.
+    state_name : str
+        Name of the state.
+    counties : list
+        List of county names in the state.
+    county_processors : dict
+        Dictionary mapping county names to EagleiCountyProcessor instances.
+    all_counties_events_df : pd.DataFrame
+        Aggregated event data for all counties.
+    ac_customers_threshold : int
+        Customer threshold used for event extraction.
+    """
     def __init__(self, 
                  state_name: str, 
                  verbose: int = 1):
@@ -4122,35 +3665,6 @@ class EagleiStateProcessor:
         self.county_processors = {}
         self.all_counties_events_df = pd.DataFrame()
         self.ac_customers_threshold = 1
-
-    def add_edge_to_county_adjacency_graph(self, from_county: str, to_county: str, edge_weight: float = 0.0, border_length: float = 0.0):
-        '''
-        Add an additional edge to the county adjacency graph.
-        Each edge is a tuple of two county names (county1, county2).
-        
-        Parameters:
-        -----------
-        from_county : str
-            Name of the first county
-        to_county : str
-            Name of the second county
-        edge_weight : float
-            Weight of the edge (default: 0.0)
-        border_length : float
-            Length of the shared border in kilometers (default: 0.0)
-        
-        Returns:
-        --------
-        None
-        '''
-        if from_county not in self.county_adjacency_graph:
-            print(f"Error: from_county {from_county} not found in the county adjacency graph.")
-        elif to_county not in self.county_adjacency_graph:
-            print(f"Error: to_county {to_county} not found in the county adjacency graph.")
-        else:
-            self.county_adjacency_graph.add_edge(from_county, to_county, weight=edge_weight, overlap_length_km=border_length, custom_added=True)
-            if self.verbose > 0:
-                print(f"Added an additional edge from {from_county} to {to_county} with weight {edge_weight} and border length {border_length} to the county adjacency graph.")
     
     def auto_process_all_counties(self,
                                   min_customers_before_gap: int = 10,
@@ -4160,26 +3674,29 @@ class EagleiStateProcessor:
                                   total_customers: int=0,
                                   ac_customers_threshold: int = 30
                                   ):
-        '''
+        """
         Automatically process all counties in the state to identify gaps, fill gaps, and extract events.
         
-        Parameters:
-        -----------
-        min_customers_before_gap : int
-            Minimum number of customers before a gap to consider it valid (default: 10)
-        min_customers_after_gap : int
-            Minimum number of customers after a gap to consider it valid (default: 2)
-        max_gap_minutes : int
-            Maximum gap duration in minutes to consider for filling (default: 1440 minutes = 1 day)
-        event_detection_type : str
-            Method for determining customer threshold (default: flat)
-        ac_customers_threshold : int
-            Customer threshold for event extraction (default: 30)
+        Parameters
+        ----------
+        min_customers_before_gap : int, default=10
+            Minimum number of customers before a gap to consider it valid.
+        min_customers_after_gap : int, default=2
+            Minimum number of customers after a gap to consider it valid.
+        max_gap_minutes : int, default=1440
+            Maximum gap duration in minutes to consider for filling.
+            Default is 24*60 (1 day).
+        detection_method : str, default='flat'
+            Method for determining customer threshold.
+        total_customers : int, default=0
+            Total number of customers in the county.
+        ac_customers_threshold : int, default=30
+            Customer threshold for event extraction.
         
-        Returns:
-        --------
+        Returns
+        -------
         None
-        '''
+        """
 
         for county in self.counties:
             if self.verbose > 0:
@@ -4229,51 +3746,26 @@ class EagleiStateProcessor:
                                                                    event_col=event_number_column)
         
         self.ac_customers_threshold = ac_customers_threshold
-
-    def save_spatiotemporal_event_plots(self, temporal_event_id: int, pdf_path: str|None = None):
-        '''
-        Save spatiotemporal event plots for all events in the state to a PDF file.
-
-        Parameters:
-        -----------
-        temporal_event_id : int
-            Temporal event ID to plot
-        pdf_path : str
-            Path to save the PDF file (default: None, which saves to 'RESULTS_DIR/spatiotemporal_events_{state_name}.pdf')
-        
-        Returns:
-        --------
-        None
-        '''
-        if self.all_counties_events_df.empty:
-            raise ValueError("No events data found. Please run auto_process_all_counties() first.")
-        
-        # check if the event id exists in the all_counties_events_df
-        if temporal_event_id not in self.all_counties_events_df['event_number_temporal'].unique():
-            raise ValueError(f"Temporal event ID {temporal_event_id} not found in the events data.")
-        
-        event_number_column = f'event_number_ac_threshold_{self.ac_customers_threshold}'
-        save_plots_to_pdf(events_df = self.all_counties_events_df, 
-                          event_id = temporal_event_id, 
-                          overlap_method = 'standard_overlap', 
-                          graph_of_counties = self.county_adjacency_graph,
-                          county_event_col = event_number_column,
-                          pdf_path = pdf_path)
-        
+  
     def get_spatiotemporal_events(self, temporal_event_id: int) -> pd.DataFrame:
-        '''
+        """
         Get the spatiotemporal events for a specific temporal event ID.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         temporal_event_id : int
-            Temporal event ID to get spatiotemporal events for
+            Temporal event ID to get spatiotemporal events for.
         
-        Returns:
-        --------
+        Returns
+        -------
         pd.DataFrame
-            DataFrame containing spatiotemporal events
-        '''
+            DataFrame containing spatiotemporal events.
+            
+        Raises
+        ------
+        ValueError
+            If no events data found or temporal_event_id not found.
+        """
         if self.all_counties_events_df.empty:
             raise ValueError("No events data found. Please run auto_process_all_counties() first.")
         
@@ -4290,190 +3782,26 @@ class EagleiStateProcessor:
                                                    graph_of_counties=self.county_adjacency_graph,
                                                    time_overlap_method='standard_overlap')
         return spatiotemporal_events
-    
-    def view_event_map_temporal(self, temporal_event_id: int):
-        '''
-        View the event map for a specific temporal event ID.
-
-        Parameters:
-        -----------
-        temporal_event_id : int
-            Temporal event ID to plot
-        
-        Returns:
-        --------
-        None
-        '''
-        if self.all_counties_events_df.empty:
-            raise ValueError("No events data found. Please run auto_process_all_counties() first.")
-        
-        # check if the event id exists in the all_counties_events_df
-        if temporal_event_id not in self.all_counties_events_df['event_number_temporal'].unique():
-            raise ValueError(f"Temporal event ID {temporal_event_id} not found in the events data.")
-        
-        event_number_column = f'event_number_ac_threshold_{self.ac_customers_threshold}'
-        plot_event_on_map(events_df = self.all_counties_events_df, 
-                          event_id = temporal_event_id, 
-                          event_col='event_number_temporal',
-                          county_wide_events_col=event_number_column,
-                          state_fips_code=self.state_fips_code)
-        
-    def view_event_map_spatiotemporal(self, temporal_event_id: int, spatiotemporal_event_id: int):
-        '''
-        View the event map for a specific spatiotemporal event ID.
-
-        Parameters:
-        -----------
-        temporal_event_id : int
-            Temporal event ID to get spatiotemporal events for
-        spatiotemporal_event_id : int
-            Spatiotemporal event ID to plot
-        
-        Returns:
-        --------
-        None
-        '''
-        if self.all_counties_events_df.empty:
-            raise ValueError("No events data found. Please run auto_process_all_counties() first.")
-        
-        # get the spatiotemporal events for the given temporal event id
-        spatiotemporal_events = self.get_spatiotemporal_events(temporal_event_id)
-        
-        # check if the event id exists in the all_counties_events_df
-        if spatiotemporal_event_id not in spatiotemporal_events['event_number_spatiotemporal'].unique():
-            raise ValueError(f"Spatiotemporal event ID {spatiotemporal_event_id} not found in the events data.")
-        
-        event_number_column = f'event_number_ac_threshold_{self.ac_customers_threshold}'
-        plot_event_on_map(events_df = spatiotemporal_events, 
-                          event_id = spatiotemporal_event_id, 
-                          event_col='event_number_spatiotemporal',
-                          county_wide_events_col=event_number_column,
-                          state_fips_code=self.state_fips_code)
-        
-    def view_event_timeline_temporal(self, temporal_event_id: int):
-        '''
-        View the event timeline for a specific temporal event ID.
-
-        Parameters:
-        -----------
-        temporal_event_id : int
-            Temporal event ID to plot
-        
-        Returns:
-        --------
-        None
-        '''
-        if self.all_counties_events_df.empty:
-            raise ValueError("No events data found. Please run auto_process_all_counties() first.")
-        
-        # check if the event id exists in the all_counties_events_df
-        if temporal_event_id not in self.all_counties_events_df['event_number_temporal'].unique():
-            raise ValueError(f"Temporal event ID {temporal_event_id} not found in the events data.")
-        
-        event_number_column = f'event_number_ac_threshold_{self.ac_customers_threshold}'
-        plot_event_timeline(events_df = self.all_counties_events_df, 
-                            event_id = temporal_event_id, 
-                            event_col_to_identify='event_number_temporal',
-                            event_col=event_number_column)
-
-    def view_event_timeline_spatiotemporal(self, temporal_event_id: int, spatiotemporal_event_id: int):
-        '''
-        View the event timeline for a specific spatiotemporal event ID.
-
-        Parameters:
-        -----------
-        temporal_event_id : int
-            Temporal event ID to get spatiotemporal events for
-        spatiotemporal_event_id : int
-            Spatiotemporal event ID to plot
-        
-        Returns:
-        --------
-        None
-        '''
-        if self.all_counties_events_df.empty:
-            raise ValueError("No events data found. Please run auto_process_all_counties() first.")
-        
-        # get the spatiotemporal events for the given temporal event id
-        spatiotemporal_events = self.get_spatiotemporal_events(temporal_event_id)
-        
-        # check if the event id exists in the all_counties_events_df
-        if spatiotemporal_event_id not in spatiotemporal_events['event_number_spatiotemporal'].unique():
-            raise ValueError(f"Spatiotemporal event ID {spatiotemporal_event_id} not found in the events data.")
-        
-        event_number_column = f'event_number_ac_threshold_{self.ac_customers_threshold}'
-        plot_event_timeline(events_df = spatiotemporal_events, 
-                            event_id = spatiotemporal_event_id, 
-                            event_col_to_identify='event_number_spatiotemporal',
-                            event_col=event_number_column)
-
-    def view_performance_curve_temporal(self, temporal_event_id: int):
-        '''
-        View the multicounty performance curve for a specific temporal event ID.
-
-        Parameters:
-        -----------
-        temporal_event_id : int
-            Temporal event ID to plot
-        
-        Returns:
-        --------
-        None
-        '''
-        if self.all_counties_events_df.empty:
-            raise ValueError("No events data found. Please run auto_process_all_counties() first.")
-        
-        # check if the event id exists in the all_counties_events_df
-        if temporal_event_id not in self.all_counties_events_df['event_number_temporal'].unique():
-            raise ValueError(f"Temporal event ID {temporal_event_id} not found in the events data.")
-        
-        plot_eaglei_multicounty_performance_curve(events_df = self.all_counties_events_df, 
-                                                  event_number = temporal_event_id, 
-                                                  event_method='temporal')
-        
-    def view_performance_curve_spatiotemporal(self, temporal_event_id: int, spatiotemporal_event_id: int):
-        '''
-        View the performance curve for a specific spatiotemporal event ID.
-
-        Parameters:
-        -----------
-        temporal_event_id : int
-            Temporal event ID to get spatiotemporal events for
-        spatiotemporal_event_id : int
-            Spatiotemporal event ID to plot
-        
-        Returns:
-        --------
-        None
-        '''
-        if self.all_counties_events_df.empty:
-            raise ValueError("No events data found. Please run auto_process_all_counties() first.")
-        
-        # get the spatiotemporal events for the given temporal event id
-        spatiotemporal_events = self.get_spatiotemporal_events(temporal_event_id)
-        
-        # check if the event id exists in the all_counties_events_df
-        if spatiotemporal_event_id not in spatiotemporal_events['event_number_spatiotemporal'].unique():
-            raise ValueError(f"Spatiotemporal event ID {spatiotemporal_event_id} not found in the events data.")
-        
-        plot_eaglei_multicounty_performance_curve(events_df = spatiotemporal_events, 
-                                                  event_number = spatiotemporal_event_id, 
-                                                  event_method='spatiotemporal')
 
     def get_county_processor(self, county_name: str) -> EagleiCountyProcessor:
-        '''
+        """
         Get the EagleiCountyProcessor instance for a specific county.
         
-        Parameters:
-        -----------
+        Parameters
+        ----------
         county_name : str
-            Name of the county
+            Name of the county.
         
-        Returns:
-        --------
+        Returns
+        -------
         EagleiCountyProcessor
-            Instance of EagleiCountyProcessor for the specified county
-        '''
+            Instance of EagleiCountyProcessor for the specified county.
+            
+        Raises
+        ------
+        ValueError
+            If county_name not found in the counties list.
+        """
         if county_name not in self.counties:
             raise ValueError(f"County {county_name} not found in the counties list.")
         return EagleiCountyProcessor(
@@ -4488,6 +3816,53 @@ class EagleiStateProcessor:
 
 # A class which can load data for a specific county from the eaglei_df and perform the gap filling and event extraction
 class EagleiCountyProcessor:
+    """
+    Processor class for handling EAGLEi power outage data at the county level.
+    
+    This class processes EAGLE-i data for a specific county, managing gap identification,
+    gap filling, and event extraction.
+    
+    Parameters
+    ----------
+    eaglei_df : pd.DataFrame
+        DataFrame containing EAGLE-i data for the state.
+    county_name : str
+        Name of the county to process.
+    customer_column : str, default=constants.CUSTOMERS_COL
+        Name of the column containing customer counts.
+    timestamp_column : str, default=constants.TIMESTAMP_COL
+        Name of the column containing timestamps.
+    verbose : int, default=1
+        Verbosity level for logging.
+        - 0: No print outputs
+        - 1: Basic print outputs
+        - 2: Detailed print outputs
+        
+    Attributes
+    ----------
+    county_df : pd.DataFrame
+        EAGLE-i data for the specific county.
+    gaps_customer_df : pd.DataFrame or None
+        Identified gaps in the data.
+    county_df_filled : pd.DataFrame or None
+        DataFrame with filled gaps.
+    gaps_rank_quantile : float or None
+        Quantile used for gap filling threshold.
+    county_df_with_events : pd.DataFrame or None
+        DataFrame with extracted events.
+    event_stats_ac : object or None
+        Event statistics for AC method.
+    county_df_with_events_ac_thr : pd.DataFrame or None
+        DataFrame with extracted events using threshold method.
+    event_stats_ac_thr : object or None
+        Event statistics for AC threshold method.
+        
+    Raises
+    ------
+    ValueError
+        If customer_column or timestamp_column not found, timestamp not in datetime format,
+        or county_name not found in eaglei_df.
+    """
     def __init__(self, 
                  eaglei_df: pd.DataFrame, 
                  county_name: str, 
@@ -4529,24 +3904,28 @@ class EagleiCountyProcessor:
         self.county_df_with_events_ac_thr = None
         self.event_stats_ac_thr = None
 
-
-    def data_quality_analysis(self,
-                              year: int = 2024):
-        # check if leap year
-        if (year % 400 == 0) or (year % 4 == 0 and year % 100 != 0):
-            expected_num_timestamps=366*24*4 # 366 days - 24 hr - 4 timestamps per hr
-        else:
-            expected_num_timestamps=365*24*4
-        # need to make this work per year
-        num_timestamps=len(self.customer_column)
-        DQI=num_timestamps/expected_num_timestamps
-        print(f"DQI: {DQI}")
-
     def identify_gaps(self, 
                       min_customers_before_gap: int = 10,
                       min_customers_after_gap: int = 2,
                       max_gap_minutes: int = 24*60 # 1 day
                       ):
+        """
+        Identify gaps in the county data.
+        
+        Parameters
+        ----------
+        min_customers_before_gap : int, default=10
+            Minimum number of customers before a gap to consider it valid.
+        min_customers_after_gap : int, default=2
+            Minimum number of customers after a gap to consider it valid.
+        max_gap_minutes : int, default=1440
+            Maximum gap duration in minutes to consider. Default is 24*60 (1 day).
+            
+        Returns
+        -------
+        None
+            Sets self.gaps_customer_df with identified gaps.
+        """
         self.gaps_customer_df = identify_and_rank_time_gaps(
             self.county_df.copy(), 
             min_customers_before_gap = min_customers_before_gap,
@@ -4559,51 +3938,29 @@ class EagleiCountyProcessor:
         if not self.gaps_customer_df.empty:
             analyze_gap_rankings(self.gaps_customer_df, top_n=10, verbose=self.verbose)
 
-
-    def gaps_distribution_at_quantile(self, 
-                                      rank_threshold_quantile: float = 0.40):
-        if self.gaps_customer_df is None:
-            raise ValueError("Gaps must be identified before analyzing distribution.")
-        if self.gaps_customer_df.empty:
-            print("No gaps identified to analyze.")
-            return
-
-        decided_rank_threshold = self.gaps_customer_df['rank'].quantile(rank_threshold_quantile)
-
-        if self.verbose > 0:
-            print(f"Decided Rank Threshold at Quantile {rank_threshold_quantile}: {decided_rank_threshold:.2f}")
-            print(f"Gaps that will be Filled: {self.gaps_customer_df[self.gaps_customer_df['rank']>decided_rank_threshold].shape[0]} out of {self.gaps_customer_df.shape[0]} total gaps ({(self.gaps_customer_df[self.gaps_customer_df['rank']>decided_rank_threshold].shape[0]/self.gaps_customer_df.shape[0])*100:.2f}%)")
-
-        # Distribution of gap durations that will be filled
-        filled_distribution = self.gaps_customer_df[self.gaps_customer_df['rank']>decided_rank_threshold]['duration_category'].value_counts().sort_index()
-        if self.verbose > 0:
-            print("Distribution of gap durations that will be filled:")
-            print(filled_distribution)
-        
-        # Distribution of gap durations that will not be filled
-        not_filled_distribution = self.gaps_customer_df[self.gaps_customer_df['rank']<=decided_rank_threshold]['duration_category'].value_counts().sort_index()
-        if self.verbose > 0:
-            print("Distribution of gap durations that will not be filled:")
-            print(not_filled_distribution)
-
-    def visualize_gaps(self, 
-                       rank_threshold_quantile = None):
-        if self.gaps_customer_df is None:
-            raise ValueError("Gaps must be identified before visualization.")
-        if self.gaps_customer_df.empty:
-            print("No gaps identified to visualize.")
-            return
-        if rank_threshold_quantile is None:
-            if self.gaps_rank_quantile is not None:
-                visualize_gap_analysis(self.gaps_customer_df, self.gaps_rank_quantile)
-            else:
-                print("No rank_threshold_quantile provided and no previous quantile found. Please provide a quantile value.")
-        else:
-            visualize_gap_analysis(self.gaps_customer_df, rank_threshold_quantile)
-
     def fill_gaps(self,
                   auto_decide_rank_threshold: bool = True, 
                   rank_threshold_quantile: float = 0.40):
+        """
+        Fill identified gaps in the county data.
+        
+        Parameters
+        ----------
+        auto_decide_rank_threshold : bool, default=True
+            Whether to automatically determine the rank threshold for gap filling.
+        rank_threshold_quantile : float, default=0.40
+            Quantile to use for determining rank threshold if auto_decide is False.
+            
+        Returns
+        -------
+        None
+            Sets self.county_df_filled with gap-filled data.
+            
+        Raises
+        ------
+        ValueError
+            If gaps have not been identified before calling this method.
+        """
         if self.gaps_customer_df is None:
             raise ValueError("Gaps must be identified before filling.")
         if self.gaps_customer_df.empty:
@@ -4633,35 +3990,42 @@ class EagleiCountyProcessor:
             verbose=self.verbose
         )
 
-    def extract_events_ac(self):
-        if self.county_df_filled is None:
-            raise ValueError("Data gaps must be filled before extracting events.")
-        
-        self.county_df_with_events = extract_events_eaglei_ac(self.county_df_filled, timestamp_column=self.timestamp_column)
-        
-        if self.county_df_with_events is None or 'event_number_ac' not in self.county_df_with_events.columns:
-            raise ValueError("Event extraction failed or 'event_number_ac' column not found.")
-        
-        if self.verbose > 0:
-            print(f"Total Events Created (AC): {self.county_df_with_events['event_number_ac'].nunique()}")
-        
-        # Ensure event_stats_ac is always a DataFrame (get_eaglei_event_stats may return a dict for a single event)
-        _stats = get_eaglei_event_stats(self.county_df_with_events,
-                                       event_numbers = self.county_df_with_events['event_number_ac'].unique(),
-                                       event_method = 'ac',
-                                       timestamp_column = self.timestamp_column,
-                                       customer_column = self.customer_column)
-        if isinstance(_stats, dict):
-            # wrap single-event dict into a DataFrame
-            self.event_stats_ac = pd.DataFrame([_stats])
-        else:
-            self.event_stats_ac = _stats
-
     def extract_events_ac_thr(self,
                               event_detection_type: str = "flat",
                               total_customers: int=0,
                               customer_threshold: float = 10, 
                               crossing_mode: str = 'both'):
+        """
+        Extract events using AC threshold method.
+        
+        Parameters
+        ----------
+        event_detection_type : str, default='flat'
+            Method for determining customer threshold:
+            - 'flat': Flat threshold value
+            - 'percent': Percentage-based threshold
+        total_customers : int, default=0
+            Total number of customers in the county (required for percent mode).
+        customer_threshold : float, default=10
+            Customer threshold value for event detection.
+        crossing_mode : str, default='both'
+            Crossing mode for event detection:
+            - 'both': Detect crossing in both directions
+            - 'upward': Detect only upward crossings
+            - 'downward': Detect only downward crossings
+            
+        Returns
+        -------
+        None
+            Sets self.county_df_with_events_ac_thr with extracted events and
+            self.event_stats_ac_thr with event statistics.
+            
+        Raises
+        ------
+        ValueError
+            If gaps have not been filled before calling this method, or if
+            event extraction fails.
+        """
         
         if self.county_df_filled is None:
             raise ValueError("Data gaps must be filled before extracting events.")
@@ -4691,75 +4055,3 @@ class EagleiCountyProcessor:
                                                          event_method = event_method_name,
                                                          timestamp_column = self.timestamp_column,
                                                          customer_column = self.customer_column)
-    
-    def plot_top_n_largest_events(self, 
-                                  event_method: str = 'ac', 
-                                  top_n: int = 50):
-        
-        if (top_n <= 0) or (top_n > 100):
-            raise ValueError("top_n must be a positive integer between 1 and 100.")
-        
-        if event_method == 'ac':
-            if (self.county_df_with_events is None) or (self.event_stats_ac is None):
-                raise ValueError("Events must be extracted before plotting.")
-            top_n_event_numbers = self.event_stats_ac.sort_values(by='num_outages', ascending=False).iloc[0:top_n]['event_number'].tolist()
-            plot_multiple_eaglei_performance_curves(self.county_df_with_events,
-                                                    top_n_event_numbers,
-                                                    event_method=event_method)
-        elif event_method.startswith('ac_threshold_'):
-            if self.county_df_with_events_ac_thr is None or self.event_stats_ac_thr is None:
-                raise ValueError("AC threshold events must be extracted before plotting.")
-            top_n_event_numbers = self.event_stats_ac_thr.sort_values(by='num_outages', ascending=False).iloc[0:top_n]['event_number'].tolist()
-            plot_multiple_eaglei_performance_curves(self.county_df_with_events_ac_thr,
-                                                    top_n_event_numbers,
-                                                    event_method=event_method)
-        else:
-            raise ValueError("event_method must be 'ac' or start with 'ac_threshold_'.")
-        
-    def plot_customers_histograms(self):
-        if self.county_df_filled is None:
-            raise ValueError("Data gaps must be filled before this action.")
-        
-        # create a subplot with 1 row and 3 columns
-        _, axs = plt.subplots(1, 3, figsize=(18,5))
-
-        # Customers > 0
-        series = self.county_df_filled.loc[self.county_df_filled[self.customer_column] > 0, self.customer_column]
-        tmp_cust = np.asarray(series, dtype=float)
-        if tmp_cust.size == 0:
-            tmp_cust_log = np.array([])
-        else:
-            tmp_cust_log = np.log10(tmp_cust)
-        sns.histplot(tmp_cust_log, bins=50, kde=False, ax=axs[0])
-        axs[0].set_title('Customers Out > 0')
-        axs[0].set_xlabel('Log of Customers Out')
-        axs[0].set_ylabel('Frequency')
-
-        # Customers > 1
-        series = self.county_df_filled.loc[self.county_df_filled[self.customer_column] > 1, self.customer_column]
-        tmp_cust = np.asarray(series, dtype=float)
-        if tmp_cust.size == 0:
-            tmp_cust_log = np.array([])
-        else:
-            tmp_cust_log = np.log10(tmp_cust)
-        sns.histplot(tmp_cust_log, bins=50, kde=False, ax=axs[1])
-        axs[1].set_title('Customers Out > 1')
-        axs[1].set_xlabel('Log of Customers Out')
-        axs[1].set_ylabel('Frequency')
-
-        # Customers > 2
-        series = self.county_df_filled.loc[self.county_df_filled[self.customer_column] > 2, self.customer_column]
-        tmp_cust = np.asarray(series, dtype=float)
-        if tmp_cust.size == 0:
-            tmp_cust_log = np.array([])
-        else:
-            tmp_cust_log = np.log10(tmp_cust)
-        sns.histplot(tmp_cust_log, bins=50, kde=False, ax=axs[2])
-        axs[2].set_title('Customers Out > 2')
-        axs[2].set_xlabel('Log of Customers Out')
-        axs[2].set_ylabel('Frequency')
-
-        plt.suptitle(f'Histogram of Log of Customers Out in {self.county_name} County (Eagle-i individual outages)', fontsize=16)
-        plt.tight_layout()
-        plt.show()
-
