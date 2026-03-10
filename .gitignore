@@ -15,6 +15,7 @@ ENV/
 # Python cache and compiled files
 __pycache__/
 *.pyc
+**/__pycache__/
 *.py[cod]
 *$py.class
 *.so
