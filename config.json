@@ -4,8 +4,8 @@
   "project_description": "Comprehensive outage and weather data processing pipeline for Eagle-I dataset analysis",
   
   "processing_parameters": {
-    "state": "Illinois",
-    "county": "Shelby",
+    "state": "California",
+    "county": "Los Angeles",
     "start_year": 2014,
     "end_year": 2024
   },

@@ -3,7 +3,7 @@ import os
 import pandas as pd
 import xarray as xr
 
-def calculate_events_stats(dataset, event_threshold, event_type):
+def calculate_events_stats(dataset, event_threshold, event_type, multi_county_data=False):
     # get a single dataframe merging customers_out, event_number_eaglei and maximum weather variables across all stations
 
     event_col_name=f"event_number_{event_type}"
@@ -31,20 +31,23 @@ def calculate_events_stats(dataset, event_threshold, event_type):
     # append weather stats to the events_stats dataframe
     weather_stats_list = []
     for event_num in event_numbers:
-        if event_type=='mc_spatiotemporal':
-            counties_affected = (
-                events_stats.loc[events_stats['event_number'] == event_num, "counties_affected"]
-                .iloc[0]
-                .split(",")
-            )
-        elif event_type=='eaglei':
-            counties_affected=dataset.county.values
-        filtered_ds = dataset.sel(
-            station=[
-                s for s in dataset.station.values
-                if s.replace("Illinois", "").split("_")[0] in counties_affected
-            ]
+        # if event_type=='mc_spatiotemporal':
+        counties_affected = (
+            events_stats.loc[events_stats['event_number'] == event_num, "counties_affected"]
+            .iloc[0]
+            .split(",")
         )
+        # elif event_type=='eaglei':
+        #     counties_affected=dataset.county
+        if multi_county_data:
+            filtered_ds = dataset.sel(
+                station=[
+                    s for s in dataset.station.values
+                    if s.replace("Illinois", "").split("_")[0] in counties_affected
+                ]
+            )
+        else:
+            filtered_ds=dataset
         weather_df = filtered_ds[['tmpf', 'sknt', 'gust', 'p01i']].max(dim='station').to_dataframe().reset_index()
         merged_df_non_zero = pd.merge(outage_df_non_zero, weather_df, on='time')
         event_data = merged_df_non_zero[merged_df_non_zero[event_col_name] == event_num]
@@ -75,13 +78,18 @@ def calculate_events_stats(dataset, event_threshold, event_type):
 
 # dataset params
 event_threshold=30
-state='Illinois'
-county='Cook'
-# ds_merged = xr.open_dataset(f'../merged_data/{state}/merged_data_{state}_{county}_2014_2024.nc')
-# event_type='eaglei'
-# path = f'../events_stats/county_events/{state}'
-# events_stats = calculate_events_stats(ds_merged, event_threshold, event_type)
-# events_stats.to_parquet(f'{path}/{county}_event_stats.parquet')
+state='Florida'
+county='Miami-Dade'
+
+# CALCULATING EVENT STATS FOR SINGLE COUNTY FILE
+ds_merged = xr.open_dataset(f'../merged_data/{state}/merged_data_{state}_{county}_2014_2024.nc')
+event_type='eaglei'
+path = f'../events_stats/county_events/{state}'
+if not os.path.exists(path):
+    os.makedirs(path)
+events_stats = calculate_events_stats(ds_merged, event_threshold, event_type)
+events_stats.to_parquet(f'{path}/{county}_event_stats.parquet')
+
 # CALCULATING EVENT STATS FOR EACH COUNTY
 #
 # list_of_counties=list(ds_merged.counties.split(', '))
@@ -107,15 +115,15 @@ county='Cook'
 
 # CALCULATING SPATIOTEMPORAL EVENT STATS
 
-path = '../events_stats/spatiotemporal_events'
-if not os.path.exists(path):
-    os.makedirs(path)
-
-ds_merged=xr.open_dataset(f'../multi_county_data/multi_county_data_2014_2024_102_counties.nc')
-
-events_stats = calculate_events_stats(ds_merged,event_threshold,event_type='mc_spatiotemporal')
-
-events_stats.to_parquet(f'{path}/event_stats_{state}.parquet')
+# path = '../events_stats/spatiotemporal_events'
+# if not os.path.exists(path):
+#     os.makedirs(path)
+#
+# ds_merged=xr.open_dataset(f'../multi_county_data/multi_county_data_2014_2024_102_counties.nc')
+#
+# events_stats = calculate_events_stats(ds_merged,event_threshold,event_type='mc_spatiotemporal')
+#
+# events_stats.to_parquet(f'{path}/event_stats_{state}.parquet')
 
 
 
