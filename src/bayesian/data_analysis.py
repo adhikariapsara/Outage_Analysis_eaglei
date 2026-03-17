@@ -252,64 +252,53 @@ def get_customers_in_county(county,state):
     customers = result['Customers'].values[0]
     return customers
 
-def calculate_VAR_CVAR(state, county, target_variable, target_output, type):
+def calculate_VAR_CVAR(state, county, W, L, column_name):
 
-    # download weather profile
-    weather_profile=pd.read_csv(f'weather_profiles/{state}_{county}_{target_variable}_profile.csv',
-                                names=[target_variable,'probability'])
-    # download Bayesian Fit
-    bayesian_results=pd.read_csv(f'results/bayesian_single_{state}_{county}_max_{target_variable}_{target_output}.csv')
+    # Download Probabilistic Weather Profile
+    p_W=pd.read_csv(f'weather_profiles/{state}_{county}_{W}_profile.csv',
+                                names=[W,'probability'])
 
-    params=[]
-    with open(f'weather_profiles/{state}_{county}_{target_variable}_profile_params.txt', 'r') as file:
-        for line in file:
-            params.extend([float(num) for num in line.split()])
+    # Download Outage Distribution Given Event Occurrence
+    G_r_w=pd.read_csv(f'results/bayesian_single_{state}_{county}_max_{W}_{L}.csv')
 
-    df_sorted = weather_profile.sort_values(target_variable)
-    # df_sorted["probability"] /= df_sorted["probability"].sum()
-    # df_sorted["cum_prob"] = df_sorted["probability"].cumsum()
+    # Download Event Probability
+    prob_event_W=pd.read_csv(f'results/bayesian_probability_{state}_{county}_{W}_outage.csv')
+
+    num_customers = get_customers_in_county(county, state)
+    alpha=0.95
+
+    F_r_w=pd.DataFrame([G_r_w[f'max_{W}'],(1-prob_event_W[column_name])+G_r_w[column_name]*prob_event_W[column_name]]).transpose()
+
     # Compute cumulative probability
-    df_sorted["cum_prob"] = df_sorted["probability"].cumsum()
-    #Find wind speed where cumulative probability crosses 95%
-    location = df_sorted.loc[
-        df_sorted["cum_prob"] >= 0.95, target_variable
+    p_W["cum_prob"] = p_W["probability"].cumsum()
+    # Find wind speed where cumulative probability crosses 95%
+    w_alpha = p_W.loc[
+        p_W["cum_prob"] >= alpha, W
     ].iloc[0]
+    print("Weather Condition at 95th Percentile:", w_alpha)
+    # G_r_w = G_r_w.sort_values(f"max_{W}")
 
-
-    #location = lognorm.ppf(0.95, shape, loc=loc, scale=scale)
-
-    print("95th percentile Weather:", location)
-    df = bayesian_results.sort_values(f"max_{target_variable}")
-    # interpolate for VAR
-    lower = df[df[f"max_{target_variable}"] <= location].iloc[-1]
-    upper = df[df[f"max_{target_variable}"] >= location].iloc[0]
-    x1, y1 = lower[f"max_{target_variable}"], lower[type]
-    x2, y2 = upper[f"max_{target_variable}"], upper[type]
+    # interpolate and calculate VAR
+    lower = F_r_w[F_r_w[f"max_{W}"] <= w_alpha].iloc[-1]
+    upper = F_r_w[F_r_w[f"max_{W}"] >= w_alpha].iloc[0]
+    x1, y1 = lower[f"max_{W}"], lower[column_name]
+    x2, y2 = upper[f"max_{W}"], upper[column_name]
     if x1==x2:
-        VAR=y1
+        VAR_alpha= y1
     else:
-        VAR = y1 + (location - x1) * (y2 - y1) / (x2 - x1)
-    VAR = math.ceil(VAR * 100) / 100
-    customers=get_customers_in_county(county,state)
-    VAR_norm=VAR/customers
-    VAR_norm=math.ceil(VAR_norm * 1000) / 1000
-    x=df_sorted['probability']
-    y=df['y_avg']
-    mask = y >= VAR
-    CVAR=(x[mask]*y[mask]).sum()*(1/(1-0.95))
-    CVAR=math.ceil(CVAR * 100) / 100
-    CVAR_norm=CVAR/customers
-    CVAR_norm=math.ceil(CVAR_norm * 1000) / 1000
-    event_probability=pd.read_csv(f'results/bayesian_probability_{state}_{county}_{target_variable}_outage.csv')
-    probability_at_wind=  event_probability.loc[
-        event_probability["gust"] == location, 'y_avg'
-    ].iloc[0]
-    probability_at_wind=math.ceil(probability_at_wind * 1000) / 1000
-    print('CVAR norm:', CVAR_norm)
-    print('probability_at_wind:', probability_at_wind)
-    effective_risk=math.ceil(CVAR_norm*probability_at_wind * 1000)/1000
-    print('Effective Risk:', effective_risk)
-    return VAR, location, CVAR, VAR_norm, CVAR_norm
+        VAR_alpha = (y1 + (w_alpha - x1) * (y2 - y1) / (x2 - x1))
+    VAR_alpha_norm=VAR_alpha/num_customers
+    print('VAR Normalized by County Population:', VAR_alpha_norm)
+
+    # Calculate CVAR
+    x=p_W['probability']
+    y=F_r_w[column_name]
+    w_above_alpha = y >= VAR_alpha
+    CVAR_alpha=(x[w_above_alpha]*y[w_above_alpha]).sum()*(1/(1-alpha))
+    CVAR_alpha_norm=CVAR_alpha/num_customers
+    print('CVAR Normalized by County Population:', CVAR_alpha_norm)
+
+    return VAR_alpha_norm, w_alpha, CVAR_alpha_norm
 
 # inputs - change as needed
 state='Illinois'
@@ -322,8 +311,8 @@ weather_variable="gust"
 #plot_multiple_bayesian_fits(weather_variable,'customer_hours')
 #plot_multiple_wind_profiles(weather_variable)
 # read in data
-VAR, location, CVAR, VAR_norm, CVAR_norm = calculate_VAR_CVAR(state, county, weather_variable,'customer_hours','y_avg')
-plot_event_profile(location, state,county, color, VAR_norm, CVAR_norm, weather_variable,'customer_hours')
+VAR, location, CVAR, effective_risk = calculate_VAR_CVAR(state, county, weather_variable,'customer_hours','y_avg')
+plot_event_profile(location, state,county, color, VAR, CVAR, weather_variable,'customer_hours')
 # weather_data=xr.open_dataset(f'../../weather_data/{state}/cleaned_weather_{state}_{county}_{start}_{end}.nc')
 # ds_merged = weather_data.sel(station=weather_data.station != "SDB")
 # df=weather_data[[weather_variable, 'sknt']].to_dataframe()
