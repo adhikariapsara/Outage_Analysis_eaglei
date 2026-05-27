@@ -45,7 +45,7 @@ def create_multi_county_events(state_county_pairs: list[dict],
         
         # Open the county dataset
         ds_county = xr.open_dataset(merged_file_path)
-        county_name = state + county
+        county_name = state + "_" + county
         datasets[county_name] = ds_county
         
         # After successfully processing the county, use the attributes from ds_county to build the fips dataframe
@@ -204,7 +204,8 @@ def create_multi_county_events(state_county_pairs: list[dict],
         # Save the resulting events dataset
         multi_county_data_file_dir = config.get("data_paths.multi_county_data_dir")
         os.makedirs(multi_county_data_file_dir, exist_ok=True)
-        multi_county_data_file_name = config.get("file_patterns.multi_county_data_file_pattern").format(start=start_year, end=end_year, nCounties=len(df_fips))
+        multi_county_data_file_name = (config.get("file_patterns.multi_county_data_file_pattern").format
+                                       (start=start_year, end=end_year, label=config.get("multi_county_analysis_parameters.label")))
         multi_county_data_file_path = os.path.join(multi_county_data_file_dir, multi_county_data_file_name)
         
         # Check if file already exists

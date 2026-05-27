@@ -1352,7 +1352,8 @@ def _get_eaglei_event_stats_single_event(eaglei_df: pd.DataFrame,
                                          event_method: str = 'ac',
                                          timestamp_column: str = constants.TIMESTAMP_COL, 
                                          customer_column: str = constants.CUSTOMERS_COL,
-                                         counties: str = 'None') -> Dict:
+                                         counties: str = 'None',
+                                         spatiotemporal: bool = False) -> Dict:
     """
     Function to get the statistics of a given event number
     
@@ -1373,30 +1374,30 @@ def _get_eaglei_event_stats_single_event(eaglei_df: pd.DataFrame,
             - num_outages: the number of outages during the event
             - num_restores: the number of restores during the event
     """
-    if "eaglei" in event_method.lower():
+    if not spatiotemporal:
         outages, restores, performance_process = get_eaglei_processes(eaglei_df, event_number, event_method,
                                                                       timestamp_column, customer_column)
-        # filtered = eaglei_df[eaglei_df[f'event_number_{event_method}'] == event_number]
-        # counties=list(filtered['county'].unique())
-        # if filtered["county"].nunique() > 1:
-        #     raise ValueError(
-        #         f"Multiple counties found for event {event_number}: {counties}. This requires spatiotemporal "
-        #         f"processing. Please set the correct event method for stats calculation."
-        #     )
+        filtered = eaglei_df[eaglei_df[f'event_number_{event_method}'] == event_number]
+        if filtered["county"].nunique() > 1:
+            raise ValueError(
+                f"Multiple counties found for event {event_number}: {counties}. This requires spatiotemporal "
+                f"processing. Please set the correct event method for stats calculation."
+            )
+        counties = filtered['county'].iat[0]
+
     else:
         outages, restores, performance_process= get_eaglei_spatiotemporal_processes(eaglei_df, event_number, event_method,
                                                                                      timestamp_column, customer_column)
-        counties = set(
+        counties = list[set(
             c
             for _, row in eaglei_df[eaglei_df[f'event_number_{event_method}'] == event_number].iterrows()
-            for c in row["county"].split("Illinois") # to do: make generalizable to state
+            for c in row["county"]
             if c
-        )
-        counties = ', '.join(map(str, counties))
+        )]
 
     if len(performance_process) == 0:
         print(f'No performance process found for event number {event_number}')
-        return {'event_number': event_number,
+        return {f'event_number': event_number,
                 'start_time': None,
                 'end_time': None,
                 'duration_hours': 0,
@@ -1424,7 +1425,7 @@ def _get_eaglei_event_stats_single_event(eaglei_df: pd.DataFrame,
 
     
     return {
-        'event_number': event_number,
+        f'event_number': event_number,
         'start_time': start_time,
         'end_time': end_time,
         'duration_hours': duration,
@@ -1456,16 +1457,19 @@ def get_eaglei_event_stats(eaglei_df: pd.DataFrame,
     Returns:
         A DataFrame if multiple event numbers are provided, or a dictionary if a single event number is provided
     """
-
+    if "spatiotemporal" not in event_method:
+        spatiotemporal=True
+    else:
+        spatiotemporal=False
     if len(event_numbers) == 1:
         return _get_eaglei_event_stats_single_event(eaglei_df, event_numbers[0], event_method, timestamp_column,
-                                                    customer_column, counties)
+                                                    customer_column, counties, spatiotemporal)
     else:
         # apply the function to all event numbers and create a DataFrame
         event_stats = []
         for event_number in event_numbers:
             stats = _get_eaglei_event_stats_single_event(eaglei_df, event_number, event_method, timestamp_column,
-                                                         customer_column, counties)
+                                                         customer_column, counties, spatiotemporal)
             # only add the stats if start_time is not None (i.e., event exists)
             if stats['start_time'] is not None:
                 event_stats.append(stats)
@@ -2404,7 +2408,7 @@ def create_multi_state_county_adjacency_graph(county_fips: List[str]) -> nx.Grap
     # Since 'STATE' is a FIPS code, we can map it to state abbreviation using contants.STATE_FIPS_DICT, but we need to reverse the dictionary first
     reversed_state_fips_dict = {v: k.title() for k, v in constants.STATE_FIPS_DICT.items()}
     gdf['STATE_NAME'] = gdf['STATE'].map(reversed_state_fips_dict)
-    gdf['NAME_TO_USE'] = gdf['STATE_NAME'] + gdf['NAME']
+    gdf['NAME_TO_USE'] = gdf['STATE_NAME'] + '_' + gdf['NAME']
 
     # Project to a suitable CRS for USA Mainland (NAD83 / Conus Albers)
     # This ensures accurate distance/area calculations
@@ -3391,44 +3395,91 @@ def apply_spatiotemporal_grouping_optimized(combined, graph_of_counties,
     county_neighbors = {}
     for county in df['county'].unique():
         county_neighbors[county] = get_neighbors_at_level(graph_of_counties, county, level=neighbour_level)
-    
+
+    # print("Computing time ranges and outage process end times...")
+    #
+    # # sort once so event sequences are chronological
+    # df = df.sort_values(['county', county_event_col, 'time'])
+    #
+    # group_cols = ['county', county_event_col]
+    #
+    # results = []
+    #
+    # for (county, event_id), group in df.groupby(group_cols, sort=False):
+    #
+    #     customers = group['customers_out'].to_numpy()
+    #     times = group['time'].to_numpy()
+    #
+    #     time_min = times[0]
+    #     time_max = times[-1]
+    #
+    #     # outage process end logic
+    #     if np.all(customers == customers[0]):
+    #         outage_process_end = times[0]
+    #     else:
+    #         diffs = np.diff(customers)
+    #         increase_indices = np.where(diffs > 0)[0]
+    #
+    #         if len(increase_indices):
+    #             outage_process_end = times[increase_indices[-1] + 1]
+    #         else:
+    #             outage_process_end = times[0]
+    #
+    #     results.append({
+    #         'county': county,
+    #         county_event_col: event_id,
+    #         'time_min': time_min,
+    #         'time_max': time_max,
+    #         'outage_process_end': outage_process_end
+    #     })
+    #
+    # county_event_info = pd.DataFrame(results)
+    #
+    # # merge back
+    # df_with_temporal = df.merge(
+    #     county_event_info,
+    #     on=['county', county_event_col],
+    #     how='left'
+    # )
+
+
     print("Computing time ranges and outage process end times...")
     # Compute time ranges and outage process end times for all county events
     county_event_info = df.groupby(['county', county_event_col]).agg({
         'time': ['min', 'max'],
         'customers_out': list
     }).reset_index()
-    
+
     county_event_info.columns = ['county', county_event_col, 'time_min', 'time_max', 'customers_list']
-    
+
     # Compute outage process end time
     def compute_outage_process_end(row):
         customers = row['customers_list']
-        times_for_event = df[(df['county'] == row['county']) & 
+        times_for_event = df[(df['county'] == row['county']) &
                              (df[county_event_col] == row[county_event_col])]['time'].values
-        
+
         if len(set(customers)) == 1:
             return times_for_event[0]
-        
+
         # Find last increase
         diffs = np.diff(customers)
         increase_indices = np.where(diffs > 0)[0]
-        
+
         if len(increase_indices) > 0:
             last_increase_idx = increase_indices[-1] + 1
             return times_for_event[last_increase_idx]
         else:
             return times_for_event[0]
-    
+
     county_event_info['outage_process_end'] = county_event_info.apply(compute_outage_process_end, axis=1)
-    
+
     # Add temporal event info
     df_with_temporal = df.merge(
         county_event_info[['county', county_event_col, 'time_min', 'time_max', 'outage_process_end']],
         on=['county', county_event_col],
         how='left'
     )
-    
+
     print("Building spatiotemporal graph...")
     # Build graph for all events
     event_graph = nx.Graph()
