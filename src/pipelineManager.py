@@ -149,6 +149,13 @@ class PipelineManager:
             county_pairs = self.config.get("multi_county_analysis_parameters.state_county_pairs")
             start = self.config.get("processing_parameters.start_year")
             end = self.config.get("processing_parameters.end_year")
+
+            multi_county_data_file_dir = self.config.get("data_paths.multi_county_data_dir")
+            os.makedirs(multi_county_data_file_dir, exist_ok=True)
+            multi_county_data_file_name = (self.config.get("file_patterns.multi_county_data_file_pattern").format
+                                           (start=start, end=end,
+                                            label=self.config.get("multi_county_analysis_parameters.label")))
+            multi_county_data_file_path = os.path.join(multi_county_data_file_dir, multi_county_data_file_name)
             
             # first check if county_pairs is not empty
             if not county_pairs:
@@ -167,7 +174,10 @@ class PipelineManager:
                     logger.error(f"Merged data file {merged_file_path} not found. Please run the full pipeline for {state} - {county} first.")
                     return False
 
-            multi_county_analysis.create_multi_county_events(county_pairs, start, end, self.config)
+            if os.path.isfile(multi_county_data_file_path) and self.config.get("processing_options.skip_if_exists"):
+                logger.info(f"  → Multi-County data already exists. Skipping.")
+            else:
+                multi_county_analysis.create_multi_county_events(county_pairs, start, end, self.config)
 
             if self.config.get("processing_options.calculate_event_stats"):
                 self._calculate_event_stats_multi_county(start, end)

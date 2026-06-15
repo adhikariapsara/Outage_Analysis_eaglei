@@ -3,8 +3,8 @@
   "project_version": "1.0.0",
   "project_description": "Comprehensive outage and weather data processing pipeline for Eagle-I dataset analysis",
   "processing_parameters": {
-    "state": "Washington",
-    "county": "King",
+    "state": "California",
+    "county": "Los Angeles",
     "start_year": 2015,
     "end_year": 2025
   },
@@ -65,131 +65,55 @@
   "multi_county_analysis_parameters": {
     "state_county_pairs": [
       {
-        "state": "Washington",
-        "county": "Adams"
+        "state": "Arizona",
+        "county": "Apache"
       },
       {
-        "state": "Washington",
-        "county": "Asotin"
+        "state": "Arizona",
+        "county": "Cochise"
       },
       {
-        "state": "Washington",
-        "county": "Benton"
+        "state": "Arizona",
+        "county": "Coconino"
       },
       {
-        "state": "Washington",
-        "county": "Chelan"
+        "state": "Arizona",
+        "county": "Gila"
       },
       {
-        "state": "Washington",
-        "county": "Clallam"
+        "state": "Arizona",
+        "county": "Graham"
       },
       {
-        "state": "Washington",
-        "county": "Columbia"
+        "state": "Arizona",
+        "county": "Greenlee"
       },
       {
-        "state": "Washington",
-        "county": "Cowlitz"
+        "state": "Arizona",
+        "county": "La Paz"
       },
       {
-        "state": "Washington",
-        "county": "Douglas"
+        "state": "Arizona",
+        "county": "Mohave"
       },
       {
-        "state": "Washington",
-        "county": "Ferry"
+        "state": "Arizona",
+        "county": "Navajo"
       },
       {
-        "state": "Washington",
-        "county": "Franklin"
+        "state": "Arizona",
+        "county": "Santa Cruz"
       },
       {
-        "state": "Washington",
-        "county": "Garfield"
+        "state": "Arizona",
+        "county": "Yavapai"
       },
       {
-        "state": "Washington",
-        "county": "Grant"
-      },
-      {
-        "state": "Washington",
-        "county": "Island"
-      },
-      {
-        "state": "Washington",
-        "county": "Jefferson"
-      },
-      {
-        "state": "Washington",
-        "county": "Kitsap"
-      },
-      {
-        "state": "Washington",
-        "county": "Kittitas"
-      },
-      {
-        "state": "Washington",
-        "county": "Lewis"
-      },
-      {
-        "state": "Washington",
-        "county": "Lincoln"
-      },
-      {
-        "state": "Washington",
-        "county": "Mason"
-      },
-      {
-        "state": "Washington",
-        "county": "Okanogan"
-      },
-      {
-        "state": "Washington",
-        "county": "Pend Oreille"
-      },
-      {
-        "state": "Washington",
-        "county": "San Juan"
-      },
-      {
-        "state": "Washington",
-        "county": "Skagit"
-      },
-      {
-        "state": "Washington",
-        "county": "Skamania"
-      },
-      {
-        "state": "Washington",
-        "county": "Spokane"
-      },
-      {
-        "state": "Washington",
-        "county": "Stevens"
-      },
-      {
-        "state": "Washington",
-        "county": "Thurston"
-      },
-      {
-        "state": "Washington",
-        "county": "Walla Walla"
-      },
-      {
-        "state": "Washington",
-        "county": "Whatcom"
-      },
-      {
-        "state": "Washington",
-        "county": "Whitman"
-      },
-      {
-        "state": "Washington",
-        "county": "Yakima"
+        "state": "Arizona",
+        "county": "Yuma"
       }
     ],
-    "label": "Washington_nonrucc1"
+    "label": "Arizona_nonrucc1"
   },
   "county_adjacency_changes": {
     "add_edges": [

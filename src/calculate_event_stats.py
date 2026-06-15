@@ -121,10 +121,12 @@ def calculate_event_stats_multi_county(ds, event_type):
         counties=outage_df['county'].unique()
     )
     print("Pt 2: Calculating Weather Stats.")
-    # parts = weather_df["station"].str.split("_", expand=True)
-    # weather_df["county"] = parts[0]+'_'+parts[1]
+    parts = weather_df["station"].str.split("_", expand=True)
+    weather_df["county"] = parts[0]+'_'+parts[1]
     weather_stats_list=[]
     for row in events_stats.itertuples(index=False):
+        if row.event_number % 100 == 0:
+            print(f"  Processing weather stats for event {row.event_number}/{len(event_numbers)}")
         start_time = row.start_time
         end_time = row.end_time
         event_num = row.event_number
@@ -163,3 +165,5 @@ def initialize_multi_county_calc(start: int, end: int, config: ConfigManager) ->
     os.makedirs(event_file_dir, exist_ok=True)
     event_file_path = os.path.join(event_file_dir, event_file_name)
     event_stats.to_parquet(event_file_path)
+
+

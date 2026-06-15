@@ -1,4 +1,7 @@
+# import matplotlib
+# matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 import pandas as pd
 from scipy.stats import lognorm
 import numpy as np
@@ -8,14 +11,12 @@ import math
 import geopandas as gpd
 import xarray as xr
 import seaborn as sns
-from matplotlib.patches import Patch
 import matplotlib as mpl
 import pymc as pm
 import arviz as az
 import re
 
 colors = plt.cm.Set2.colors
-# plt.style.use('classic')
 # publication-style defaults
 mpl.rcParams.update({
     "font.size": 13,
@@ -57,43 +58,8 @@ def gauss(x,mu,sigma,A):
 def bimodal(x,mu1,sigma1,A1,mu2,sigma2,A2):
     return gauss(x,mu1,sigma1,A1)+gauss(x,mu2,sigma2,A2)
 
-def plot_temp_wind(state, county):
-    wmax = np.linspace(0, 65, 66)
-    temps = {
-        "low": ("blue", "Low Temps"),
-        "mid": ("green", "Mid Temps"),
-        "high": ("red", "High Temps"),
-    }
-    for temp, (color, label) in temps.items():
-        df = pd.read_csv(
-            f"results/monte_carlo_{state}_{county}_{temp}_tmpf.csv",
-            header=None
-        )
-        df.columns = ["customer_hours"]
-        df["max_gust"] = wmax
-        # filter out non-observed values
-        df = df[df["customer_hours"] >= 0]
-        plt.scatter(df["max_gust"], df["customer_hours"], color=color, label=label)
-    plt.legend()
-    plt.yscale('log')
-    plt.title(f"Wind Risk Sorted by Temp for {county} County, {state}")
-    plt.show()
-    breakpoint()
-
-def plot_raw_outage_data(df, county, state, color, weather_variable, outage_variable, log_indicator):
-
-    df[f'{outage_variable}_norm']=df[outage_variable]/get_customers_in_county(county,state)
-    plt.scatter(df[weather_variable],df[f'{outage_variable}_norm'],color=color, label=county, alpha=0.5, s=80)
-    if log_indicator:
-        plt.yscale('log')
-    plt.xlabel(weather_variable)
-    plt.ylabel(outage_variable)
-    plt.title(f'{county} County, {state} Precipitation Function Events')
-    plt.grid(True)
-    #plt.show()
-
 def create_weather_distribution(weather_data, weather_param, county, state, color, double_peak):
-    y, x, _ = plt.hist(weather_data[weather_param], bins=np.linspace(0,65,66), color='skyblue', edgecolor='black',
+    y, x, _ = plt.hist(weather_data[weather_param], bins=np.linspace(0,120,121), color='skyblue', edgecolor='black',
                        label='Histogram')
     # n is y-value of normalized distribution (frequency), bins is x value (wind speed)
     y = np.append(y, 0)
@@ -125,7 +91,8 @@ def create_weather_distribution(weather_data, weather_param, county, state, colo
     plt.legend()
 
     plt.grid(True)
-    plt.show()
+    plt.savefig(f'weather_profiles/{state}_{county}_{weather_param}_profile.png')
+    plt.close()
 
 def setup_weather_distribution(ds, state, county, weather_variable, color):
     print("Setting up Weather Profile.")
@@ -140,8 +107,8 @@ def setup_weather_distribution(ds, state, county, weather_variable, color):
         .to_dataframe()
         .reset_index()[['time', weather_variable]]
     )
-    df['gust']=df['gust'].round()
-    df=df[df['gust']>0]
+    df[weather_variable]=df[weather_variable].round()
+    # df=df[df['gust']>0]
     create_weather_distribution(df, weather_variable, county, state, color, double_peak)
 
 
@@ -173,8 +140,7 @@ def plot_multiple_wind_profiles(target_variable, groups):
 
     plt.show()
 
-def plot_multiple_outage_probabilities(groups):
-    target_variable='gust'
+def plot_multiple_outage_probabilities(groups, target_variable):
     target_output='probability'
     fig, ax = plt.subplots(figsize=(8, 5))
 
@@ -182,7 +148,7 @@ def plot_multiple_outage_probabilities(groups):
         path = (
             f"results/bayesian_probability_"
             f"{group[0]}_{group[1]}_"
-            f"{target_variable}_{target_output}.csv"
+            f"{target_variable}_{target_output}_spatiotemporal.csv"
         )
         fit = pd.read_csv(path)
         x = fit[target_variable]
@@ -195,7 +161,7 @@ def plot_multiple_outage_probabilities(groups):
         )
     ax.set_xlabel("Maximum Wind $w$ (mph)")
     ax.set_ylabel("Outage probability $p_E(w)$")
-    ax.set_xlim(0, 65)
+    ax.set_xlim(0, 120)
     ax.set_ylim(0, 0.4)
     ax.grid(
         True,
@@ -209,21 +175,96 @@ def plot_multiple_outage_probabilities(groups):
     )
     fig.tight_layout()
     plt.show()
+    # plt.savefig('groups_probability_comparison.png')
 
-def plot_multiple_outage_magnitudes(groups):
+def plot_multiple_outage_probabilities_fig(groups):
+    target_variable='gust'
+    target_output='probability'
+
+    fig, axes = plt.subplots(
+        2,
+        4,
+        figsize=(18, 9),
+        constrained_layout=True
+    )
+
+    for ax, (state, label, urban_color, rural_color) in zip(
+            axes.ravel(),
+            groups
+    ):
+        urban_path = (
+            f"results/bayesian_probability_"
+            f"{state}_{state}_rucc1_"
+            f"{target_variable}_{target_output}_spatiotemporal.csv"
+        )
+        fit1 = pd.read_csv(urban_path)
+        x1 = fit1[target_variable]
+        ax.plot(
+            x1,
+            fit1["y_avg"],
+            label=f'RUCC Level 1',
+            color=urban_color,
+            linewidth=2.4
+        )
+        ax.fill_between(
+            x1,
+            fit1['y_lower'],
+            fit1['y_upper'],
+            color=urban_color, alpha=0.2
+        )
+        rural_path = (
+            f"results/bayesian_probability_"
+            f"{state}_{state}_nonrucc1_"
+            f"{target_variable}_{target_output}_spatiotemporal.csv"
+        )
+        fit2 = pd.read_csv(rural_path)
+        x2 = fit2[target_variable]
+        ax.plot(
+            x2,
+            fit2["y_avg"],
+            label=f'Other',
+            color=rural_color,
+            linewidth=2.4
+        )
+        ax.fill_between(
+            x2,
+            fit2['y_lower'],
+            fit2['y_upper'],
+            color=rural_color, alpha=0.2
+        )
+        ax.set_xlabel("Maximum Wind $w$ (mph)")
+        ax.set_ylabel("Outage probability $p_E(w)$")
+        ax.set_title(state, fontsize=12)
+        ax.set_xlim(0, 65)
+        ax.set_ylim(0, 0.5)
+        ax.grid(
+            True,
+            linestyle="--",
+            alpha=0.25
+        )
+        ax.legend(
+            frameon=False,
+            loc="upper left",
+            ncol=2
+        )
+
+    plt.show()
+    # plt.savefig('groups_probability_comparison.png')
+
+def plot_multiple_outage_magnitudes(groups, target_variable):
     fig, ax = plt.subplots(figsize=(12, 7))
 
-    target_variable='max_gust'
     target_output='customer_hours_norm'
     for state, county, throwaway, color, throwaway, throwaway, throwaway in groups:
-        path = f"results/bayesian_single_{state}_{county}_{target_variable}_{target_output}.csv"
+        path = f"results/bayesian_single_{state}_{county}_{target_variable}_{target_output}_spatiotemporal.csv"
         fit = pd.read_csv(path)
         x = fit[f'{target_variable}']
         plt.plot(x, fit["y_avg"], label=county, color=color, zorder=3)
     plt.xlabel("Maximum Wind $w$")
     plt.ylabel("Outage Magnitude in Customer-Hours (Normalized)")
     plt.yscale("log")
-    plt.xlim(0, 65)
+    plt.xlim(0, 120)
+
     ax.grid(
         True,
         linestyle="--",
@@ -236,7 +277,82 @@ def plot_multiple_outage_magnitudes(groups):
     )
     fig.tight_layout()
     plt.show()
+    # plt.savefig('groups_bayesian_single_comparison.png')
+    #
 
+def plot_multiple_outage_magnitudes_fig(groups):
+    target_variable='max_gust'
+    target_output='customer_hours_norm'
+
+    fig, axes = plt.subplots(
+        2,
+        4,
+        figsize=(18, 9),
+        constrained_layout=True
+    )
+
+    for ax, (state, label, urban_color, rural_color) in zip(
+            axes.ravel(),
+            groups
+    ):
+        urban_path = (
+            f"results/bayesian_single_"
+            f"{state}_{state}_rucc1_"
+            f"{target_variable}_{target_output}_spatiotemporal.csv"
+        )
+        fit1 = pd.read_csv(urban_path)
+        x1 = fit1[target_variable]
+        ax.plot(
+            x1,
+            fit1["y_avg"],
+            label=f'RUCC Level 1',
+            color=urban_color,
+            linewidth=2.4
+        )
+        ax.fill_between(
+            x1,
+            fit1['y_lower'],
+            fit1['y_upper'],
+            color=urban_color, alpha=0.2
+        )
+        rural_path = (
+            f"results/bayesian_single_"
+            f"{state}_{state}_nonrucc1_"
+            f"{target_variable}_{target_output}_spatiotemporal.csv"
+        )
+        fit2 = pd.read_csv(rural_path)
+        x2 = fit2[target_variable]
+        ax.plot(
+            x2,
+            fit2["y_avg"],
+            label=f'Other',
+            color=rural_color,
+            linewidth=2.4,
+        )
+        ax.fill_between(
+            x2,
+            fit2['y_lower'],
+            fit2['y_upper'],
+            color=rural_color, alpha=0.2
+        )
+        ax.set_xlabel("Maximum Wind $w$ (mph)")
+        ax.set_ylabel("Expected Loss $E[C_{out-hrs}]$")
+        ax.set_title(state, fontsize=12)
+        ax.set_yscale('log')
+        ax.set_xlim(0, 65)
+        ax.set_ylim(10e-5, 10e2)
+        ax.grid(
+            True,
+            linestyle="--",
+            alpha=0.25
+        )
+        ax.legend(
+            frameon=False,
+            loc="upper left",
+            ncol=2
+        )
+
+    plt.savefig('groups_single_comparison.png')
 
 def plot_event_profile(location, state,county, color, var_y,CVAR, F_r_w, target_variable,target_output):
     # download weather profile
@@ -413,59 +529,36 @@ def get_customers_in_county_group(state, merged_data):
     )
     return total_customers_all
 
-def calculate_VAR_CVAR(state, county, W, column_name, F_r_w):
+def calculate_VAR_CVAR(state, group, event_data, color):
 
-    L='customer_hours'
-    # Download Probabilistic Weather Profile
-    p_W=pd.read_csv(f'weather_profiles/{state}_{county}_max_gust_profile.csv',
-                                names=[W,'probability'])
-
-    # # Download Outage Distribution Given Event Occurrence
-    # G_r_w=pd.read_csv(f'results/bayesian_single_{state}_{county}_max_{W}_{L}.csv')
+    # find the couthrs corresponding with 20mph
+    bayesian_single_fit=pd.read_csv(f'results/bayesian_single_{state}_{group}_max_gust_customer_hours_norm_spatiotemporal.csv')
+    cout_hrs_20=bayesian_single_fit.loc[20,'y_avg']
+    # cout_hrs_20=0.05
+    values = bayesian_single_fit['y_avg'].to_numpy()
     #
-    # # Download Event Probability
-    # prob_event_W=pd.read_csv(f'results/bayesian_probability_{state}_{county}_{W}_outage.csv')
+    # # Interpolated index
+    # interp_idx = np.interp(
+    #     cout_hrs_20,
+    #     values,
+    #     np.arange(len(values))
+    # )
+    # print(f'gust at 0.05: {interp_idx}')
+    alpha = (event_data['customer_hours_norm'] <= cout_hrs_20).mean() * 100
 
+    var = event_data['customer_hours_norm'][event_data['customer_hours_norm'] >= cout_hrs_20].reset_index()
+    var=var.replace([np.inf, -np.inf], np.nan)
+    var.dropna(axis=0, how="any",inplace=True)
+    cvar=var['customer_hours_norm'].mean()
+    alec=np.sum(np.log(var['customer_hours_norm']/cout_hrs_20))*1/(len(var))
+    print(f'CVAR: {cvar:.2f}')
+    print(f'ALEC: {alec:.2f} at the {alpha:.2f}th Percentile of data (past 20 MPH)')
 
-    num_customers = get_customers_in_county(county, state)
-    alpha=0.95
-
-    # F_r_w=pd.DataFrame([G_r_w[f'max_{W}'],(1-prob_event_W[column_name])+G_r_w[column_name]*prob_event_W[column_name]]).transpose()
-
-    # Compute cumulative probability
-    p_W["cum_prob"] = p_W["probability"].cumsum()
-    # Find wind speed where cumulative probability crosses 95%
-    w_alpha = p_W.loc[
-        p_W["cum_prob"] >= alpha, W
-    ].iloc[0]
-    print("Weather Condition at 95th Percentile:", w_alpha)
-    # G_r_w = G_r_w.sort_values(f"max_{W}")
-
-    # interpolate and calculate VAR
-    lower = F_r_w[F_r_w[f"max_{W}"] <= w_alpha].iloc[-1]
-    upper = F_r_w[F_r_w[f"max_{W}"] >= w_alpha].iloc[0]
-    x1, y1 = lower[f"max_{W}"], lower[column_name]
-    x2, y2 = upper[f"max_{W}"], upper[column_name]
-    if x1==x2:
-        VAR_alpha= y1
-    else:
-        VAR_alpha = (y1 + (w_alpha - x1) * (y2 - y1) / (x2 - x1))
-    VAR_alpha_norm=VAR_alpha/num_customers
-    print('VAR Normalized by County Population:', VAR_alpha_norm)
-
-    # Calculate CVAR
-    x=p_W['probability']
-    y=F_r_w[column_name]
-    # log of y, take log - log var
-    w_above_alpha = y >= VAR_alpha
-    CVAR_alpha=(x[w_above_alpha]*y[w_above_alpha]).sum()*(1/(1-alpha))
-    CVAR_alpha_norm=CVAR_alpha/num_customers
-    print('CVAR Normalized by County Population:', CVAR_alpha_norm)
-
-    y_log=np.log(F_r_w[column_name]/VAR_alpha)
-    ALEC=(x[w_above_alpha]*y_log[w_above_alpha]).sum()*(1/(1-alpha))
-
-    return VAR_alpha_norm, w_alpha, ALEC, F_r_w
+    # approach #2: large event threshold flat (95th pctile)
+    # alpha=95
+    # large_event_threshold = event_data["customer_hours_norm"].quantile(alpha / 100)
+    # var=event_data['customer_hours_norm'][event_data['customer_hours_norm'] >= large_event_threshold]
+    # gust_at_threshold=bayesian_single_fit.loc['max_gust']
 
 def map_counties():
     # -----------------------------
@@ -594,173 +687,144 @@ def map_counties():
     plt.show()
 
 
-def map_illinois_counties():
-    # --------------------------------------------------
-    # Load Illinois county shapefile from Census TIGER
-    # --------------------------------------------------
-    url = "https://www2.census.gov/geo/tiger/GENZ2023/shp/cb_2023_us_county_20m.zip"
+def map_us_counties():
+    state_colors = {
+        "53": {"dark": "#2166AC", "light": "#D1E5F0"},  # Washington
+        "48": {"dark": "#B8860B", "light": "#F6E8A6"},  # Texas
+        "06": {"dark": "#B2182B", "light": "#F4CCCC"},  # California
+        "25": {"dark": "#1B7837", "light": "#D9F0D3"},  # Massachusetts
+        "17": {"dark": "#54278F", "light": "#D9D9D9"},  # Illinois
+        "04": {"dark": "#C51B7D", "light": "#F4CAE4"},  # Arizona
+        "36": {"dark": "#8C510A", "light": "#DFC27D"},  # New York
+        "12": {"dark": "#01665E", "light": "#C7EAE5"},  # Florida
+    }
 
+    url = "https://www2.census.gov/geo/tiger/GENZ2023/shp/cb_2023_us_county_20m.zip"
     counties = gpd.read_file(url)
 
-    # Filter only Illinois counties
-    il = counties[counties["STATEFP"] == "17"].copy()
+    # Create county FIPS code
+    counties["FIPS"] = (
+            counties["STATEFP"] + counties["COUNTYFP"]
+    ).astype(int)
+    # ------------------------------------------------------------------
+    # Load RUCC data
+    # ------------------------------------------------------------------
 
-    # --------------------------------------------------
-    # County group definitions
-    # --------------------------------------------------
+    rucc = pd.read_csv(
+        f"../../misc/Ruralurbancontinuumcodes2023.csv",
+        header=None,
+        names=["FIPS", "State", "County_Name", "Attribute", "Value"],
+        encoding="latin1"
 
-    urban = (
-        "Cook",
+    )
+    rucc["FIPS"] = rucc["FIPS"].astype(str).str.zfill(5)
+    counties["FIPS"] = (
+            counties["STATEFP"] + counties["COUNTYFP"]
+    )
+    rucc_codes = (
+        rucc.loc[rucc["Attribute"] == "RUCC_2023",
+        ["FIPS", "Value"]]
+        .copy()
     )
 
-    semi_urban = (
-        "Champaign", "DeKalb", "DuPage",
-        "Kane", "Kankakee", "Kendall",
-        "Lake", "LaSalle", "McHenry",
-        "McLean", "Madison", "Peoria",
-        "Rock Island", "St. Clair", "Sangamon",
-        "Tazewell", "Will", "Winnebago"
+    rucc_codes["RUCC_2023"] = rucc_codes["Value"].astype(int)
+
+    counties = counties.merge(
+        rucc_codes[["FIPS", "RUCC_2023"]],
+        on="FIPS",
+        how="left"
     )
 
-    rural = (
-        "Adams", "Alexander", "Bond", "Boone",
-        "Brown", "Bureau", "Calhoun", "Carroll",
-        "Cass", "Christian", "Clark", "Clay",
-        "Clinton", "Coles", "Crawford", "Cumberland",
-        "De Witt", "Douglas", "Edgar", "Edwards",
-        "Effingham", "Fayette", "Ford", "Franklin",
-        "Fulton", "Gallatin", "Greene", "Grundy",
-        "Hamilton", "Hancock", "Hardin", "Henderson",
-        "Henry", "Iroquois", "Jackson", "Jasper",
-        "Jefferson", "Jersey", "Jo Daviess", "Johnson",
-        "Knox", "Lawrence", "Lee", "Livingston",
-        "Logan", "McDonough", "Macon", "Macoupin",
-        "Marion", "Marshall", "Mason", "Massac",
-        "Menard", "Mercer", "Monroe", "Montgomery",
-        "Morgan", "Moultrie", "Ogle", "Perry",
-        "Piatt", "Pike", "Pope", "Pulaski",
-        "Putnam", "Randolph", "Richland", "Saline",
-        "Schuyler", "Scott", "Shelby", "Stark",
-        "Stephenson", "Union", "Vermilion", "Wabash",
-        "Warren", "Washington", "Wayne", "White",
-        "Whiteside", "Williamson", "Woodford"
+    # ------------------------------------------------------------------
+    # Binary classification:
+    # RUCC == 1  -> dark blue
+    # RUCC != 1  -> light blue
+    # ------------------------------------------------------------------
+
+    counties["RUCC1"] = counties["RUCC_2023"] == 1
+
+    dark_blue = "#08519c"
+    light_blue = "#c6dbef"
+
+    counties["plot_color"] = counties["RUCC1"].map(
+        {True: dark_blue, False: light_blue}
     )
 
-    # --------------------------------------------------
-    # Assign categories + colors
-    # --------------------------------------------------
+    # ------------------------------------------------------------------
+    # States to display
+    # ------------------------------------------------------------------
 
-    def classify_county(name):
-        if name in urban:
-            return "Urban"
-        elif name in semi_urban:
-            return "Semi-Urban"
-        elif name in rural:
-            return "Rural"
-        else:
-            return "Unknown"
-
-    il["category"] = il["NAME"].apply(classify_county)
-
-    color_map = {
-        "Urban": "black",
-        "Semi-Urban": "#4B0082",   # indigo
-        "Rural": "#800080",        # purple
-        "Unknown": "lightgray"
+    states = {
+        "Washington": "53",
+        "Illinois": "17",
+        "New York": "36",
+        "Massachusetts": "25",
+        "California": "06",
+        "Arizona": "04",
+        "Texas": "48",
+        "Florida": "12",
     }
 
-    il["color"] = il["category"].map(color_map)
-
-    # --------------------------------------------------
+    # ------------------------------------------------------------------
     # Plot
-    # --------------------------------------------------
+    # ------------------------------------------------------------------
 
-    fig, ax = plt.subplots(figsize=(12, 16))
-
-    color_map = {
-        "Urban": "#3A3A3A",
-        "Semi-Urban": "#8A63D2",
-        "Rural": "#C88ACD",
-        "Unknown": "#DDDDDD"
-    }
-
-    il.plot(
-        ax=ax,
-        color=il["color"],
-        edgecolor="white",
-        linewidth=0.5,
-        alpha=0.8
-    )
-    # --------------------------------------------------
-    # Chicago label (Cook County)
-    # --------------------------------------------------
-
-    cook = il[il["NAME"] == "Cook"]
-
-    # County centroid
-    x = cook.geometry.centroid.x.iloc[0]
-    y = cook.geometry.centroid.y.iloc[0]
-
-    # Marker
-    ax.scatter(
-        x, y,
-        color="black",
-        s=80,
-        edgecolor="white",
-        linewidth=1,
-        zorder=5
+    fig, axes = plt.subplots(
+        2,
+        4,
+        figsize=(16, 10),
+        constrained_layout=True
     )
 
-    # Label
-    ax.text(
-        x + 0.15,
-        y + 0.10,
-        "Chicago\n(Cook County)",
-        fontsize=10,
-        color="black",
-        weight="bold",
-        bbox=dict(
-            facecolor="white",
-            alpha=0.85,
-            edgecolor="none",
-            pad=2
-        ),
-        zorder=6
-    )
+    for ax, (state_name, state_fips) in zip(
+            axes.ravel(),
+            states.items()
+    ):
+        gdf = counties[counties["STATEFP"] == state_fips]
 
-    # --------------------------------------------------
+        dark = state_colors[state_fips]["dark"]
+        light = state_colors[state_fips]["light"]
+
+        # Rural counties
+        gdf[gdf["RUCC_2023"] != 1].plot(
+            ax=ax,
+            color=light,
+            edgecolor="white",
+            linewidth=0.25
+        )
+
+        # Urban counties
+        gdf[gdf["RUCC_2023"] == 1].plot(
+            ax=ax,
+            color=dark,
+            edgecolor="white",
+            linewidth=0.25
+        )
+
+        ax.set_title(state_name, fontsize=12)
+        ax.set_axis_off()
+    plt.savefig('states.jpeg')
+
+    # ------------------------------------------------------------------
     # Legend
-    # --------------------------------------------------
+    # ------------------------------------------------------------------
 
-    legend_elements = [
-        Patch(facecolor="black", edgecolor="black", label="Urban (Chicago)"),
-        Patch(facecolor="#4B0082", edgecolor="black", label="Semi-Urban (Counties with over 100,000 residents)"),
-        Patch(facecolor="#800080", edgecolor="black", label="Rural (Counties with under 100,000 residents)"),
+    legend_handles = [
+        Patch(facecolor=dark_blue,
+              edgecolor="black",
+              label="RUCC = 1"),
+        Patch(facecolor=light_blue,
+              edgecolor="black",
+              label="RUCC ≠ 1")
     ]
 
-    ax.legend(
-        handles=legend_elements,
-        loc="lower right",
-        fontsize=18,
-        title_fontsize=18,
-        frameon=False,          # removes box
+    fig.legend(
+        handles=legend_handles,
+        loc="lower center",
+        ncol=2,
+        frameon=False
     )
 
-    # --------------------------------------------------
-    # Styling
-    # --------------------------------------------------
-
-    # ax.set_title(
-    #     "Illinois Counties by Urbanization Type",
-    #     fontsize=20,
-    #     weight="bold",
-    #     pad=20
-    # )
-
-    ax.axis("off")
-    plt.gcf().patch.set_facecolor("white")
-    plt.gca().set_facecolor("white")
-    plt.tight_layout()
     plt.show()
 
 def plot_large_events_profile(groups, weather_variable):
@@ -772,20 +836,19 @@ def plot_large_events_profile(groups, weather_variable):
         po_w=pd.read_csv(f'results/bayesian_probability_{state}_{county}_{weather_variable}_probability.csv')
         Cout_hrs_norm = pd.read_csv(f'results/bayesian_single_{state}_{county}_max_{weather_variable}_customer_hours_norm.csv')
         p_o_and_w=p_w['probability']*po_w['y_avg']
-        Risk=Cout_hrs_norm['y_avg']*p_o_and_w
-        total_risk=np.log(Risk.sum())
-        print(f'Total {weather_variable} risk for {county} County, {state}: {total_risk}')
+
+        print(f'{weather_variable} risk above 20 MPH for {county} County, {state}: {p_o_and_w.iloc[20:].sum()/1e-3} x 10^-3')
         p_o_and_w.to_csv(f'weather_profiles/{state}_{county}_extreme_events_profile_{weather_variable}.csv')
         plt.plot(
             po_w[weather_variable],
-            Risk,
+            p_o_and_w,
             marker='o',
             color=color,
             label=county
         )
 
     plt.xlabel(f'Max {weather_variable}')
-    plt.ylabel('Weighted Risk')
+    plt.ylabel('Joint Probability')
     ax.legend(
         frameon=False,
         loc="upper left",
@@ -796,7 +859,7 @@ def plot_large_events_profile(groups, weather_variable):
         linestyle="--",
         alpha=0.25
     )
-    plt.show()
+    plt.savefig('groups_risk_comparison.png')
 
 
 def monte_carlo_sim(ds, event_data, multivariable):
@@ -887,92 +950,225 @@ def monte_carlo_sim(ds, event_data, multivariable):
     "max_gust": max_gust,
     "customer_hours": customer_hours.ravel()})
     avg_loss_df=avg_loss_df[avg_loss_df['customer_hours']>=0]
-    #plt.scatter(np.linspace(0,65,66), avg_loss)
     return avg_loss_df
-#plt.yscale('log')
-#plt.show()
 
-def event_histograms(event_data, label, color, state, county, multi_county):
-    event_data['max_gust']=event_data['max_gust'].where(event_data['max_gust'] != 0, event_data['max_sknt'])
-    event_data['max_gust']=round(event_data['max_gust'])
-    event_data['max_tmpf']=round(event_data['max_tmpf'])
-    event_data['gust_bin'] = pd.cut(
-        event_data['max_gust'],
-        bins=[0, 10, 20, 30, 40, 100],
-        labels=['0-10', '10-20', '20-30', '30-40', '40+']
-    )
-    event_data['tmpf_bin'] =pd.cut(
-        event_data['max_tmpf'],
-        bins=[-20,30,100,140],
-        labels=['Below 30', '30-100', 'Above 100']
-    )
-    unique_counties = event_data['counties_affected'].unique()
-    total_customers_all = sum(
-        get_customers_in_county(county, state)
-        for county in unique_counties
-    )
-    event_data['customer_hours_norm'] = (
-            event_data['customer_hours'] / total_customers_all
-    )
 
-    event_data['log_customer_hours_norm'] = np.log(
-        event_data['customer_hours_norm']
-    )
+def event_histograms(groups):
 
-    # Plot
-    ax=sns.histplot(
-        data=event_data,
-        x='log_customer_hours_norm',
-        hue='tmpf_bin',
-        bins=50,
-        palette=sns.color_palette(f'light:{color}', n_colors=5),
-        multiple='fill'  # or 'dodge' or 'fill'
+    # plot
+    fig, ax = plt.subplots(figsize=(12, 7))
+
+    for state, county, multi_county, color, customers, throwaway, throwaway in groups:
+
+        event_data = pd.read_parquet(f'../../events_stats/spatiotemporal_events/{county}_event_stats_2015_2025.parquet')
+        # for comparison, we only care about eaglei event data
+        event_data = event_data[event_data['event_method'] == 'eaglei']
+        county_customer_map = {
+            county: get_customers_in_county(county, state)
+            for county in event_data["counties_affected"].unique()
+        }
+        event_data["customer_hours_norm"] = (
+                event_data["customer_hours"]
+                / event_data["counties_affected"].map(county_customer_map)
+        )
+        event_data['max_gust']=event_data['max_gust'].where(event_data['max_gust'] != 0, event_data['max_sknt'])
+
+        # Plot
+        ax=sns.ecdfplot(data=event_data, x='customer_hours_norm', complementary=True, log_scale=True, color=color, label=county)
+
+    plt.xlabel('Event Size')
+    plt.ylabel('CCDF')
+    plt.yscale('log')
+    ax.grid(
+        True,
+        linestyle="--",
+        alpha=0.25
     )
-    # ax.set_ylim(0,4000)
-    # ax.set_xlim(-14,4)
-    plt.xlabel("Log(Customer-Hours/Num_Customers)")
-    plt.ylabel("Portion of Events")
-    plt.title(f"Customer Hours by Max Wind for {county} County")
+    ax.legend(
+        frameon=False,
+        loc="upper left",
+        ncol=2
+    )
+    fig.tight_layout()
+    plt.show()
     plt.show()
 
-    # sns.ecdfplot(data=event_data, x='customer_hours_norm', complementary=True, log_scale=True, color=color)
-    # plt.xlabel('Event Size')
-    # plt.ylabel('CCDF')
-    # plt.yscale('log')
-    # plt.title(f'Empirical CCDF (Log-Log Scale) for {label}')
-    # plt.show()
+def find_rucc_groups(state_name, group):
+    us_state_map = {
+        "AL": "Alabama",
+        "AK": "Alaska",
+        "AZ": "Arizona",
+        "AR": "Arkansas",
+        "CA": "California",
+        "CO": "Colorado",
+        "CT": "Connecticut",
+        "DE": "Delaware",
+        "FL": "Florida",
+        "GA": "Georgia",
+        "HI": "Hawaii",
+        "ID": "Idaho",
+        "IL": "Illinois",
+        "IN": "Indiana",
+        "IA": "Iowa",
+        "KS": "Kansas",
+        "KY": "Kentucky",
+        "LA": "Louisiana",
+        "ME": "Maine",
+        "MD": "Maryland",
+        "MA": "Massachusetts",
+        "MI": "Michigan",
+        "MN": "Minnesota",
+        "MS": "Mississippi",
+        "MO": "Missouri",
+        "MT": "Montana",
+        "NE": "Nebraska",
+        "NV": "Nevada",
+        "NH": "New Hampshire",
+        "NJ": "New Jersey",
+        "NM": "New Mexico",
+        "NY": "New York",
+        "NC": "North Carolina",
+        "ND": "North Dakota",
+        "OH": "Ohio",
+        "OK": "Oklahoma",
+        "OR": "Oregon",
+        "PA": "Pennsylvania",
+        "RI": "Rhode Island",
+        "SC": "South Carolina",
+        "SD": "South Dakota",
+        "TN": "Tennessee",
+        "TX": "Texas",
+        "UT": "Utah",
+        "VT": "Vermont",
+        "VA": "Virginia",
+        "WA": "Washington",
+        "WV": "West Virginia",
+        "WI": "Wisconsin",
+        "WY": "Wyoming",
+        "DC": "District of Columbia"
+    }
+    failed_csv = f"../../outage_data/{state_name}/failed_counties.csv"
+    df = pd.read_csv(
+        f"../../misc/Ruralurbancontinuumcodes2023.csv",
+        header=None,
+        names=["FIPS", "State", "County_Name", "Attribute", "Value"],
+        encoding="latin1"
 
-    large_event_threshold=0.05
-    # filter only 2015 and up
-    event_data['start_time']=pd.to_datetime(event_data['start_time'])
-    event_data=event_data[event_data['start_time'].dt.year>=2015]
+    )
+
+    rucc_df = df[
+        df["Attribute"].str.contains("RUCC", case=False, na=False)
+    ].copy()
+
+    rucc_df = rucc_df.rename(columns={
+        "State": "state",
+        "County_Name": "county",
+        "Value": "rucc"
+    })
+
+    # Convert state abbreviations
+    rucc_df["state"] = rucc_df["state"].map(us_state_map)
+
+    # Clean county names
+    rucc_df["county"] = (
+        rucc_df["county"]
+        .str.replace(" County", "", regex=False)
+        .str.strip()
+    )
+
+    # Numeric RUCC
+    rucc_df["rucc"] = pd.to_numeric(
+        rucc_df["rucc"],
+        errors="coerce"
+    )
+
+    # ==================================================
+    # FILTER TO TARGET STATE
+    # ==================================================
+
+    state_df = rucc_df[
+        rucc_df["state"].str.lower() == state_name.lower()
+        ].copy()
+
+    if state_df.empty:
+        raise ValueError(f"No counties found for state: {state_name}")
+
+    # ==================================================
+    # LOAD FAILED COUNTIES
+    # ==================================================
+    try:
+        failed_df = pd.read_csv(failed_csv)
+        failed_set = set(
+            failed_df["county"]
+            .astype(str)
+            .str.strip()
+            .str.lower()
+        )
+        # remove failed counties
+        state_df = state_df[
+            ~state_df["county"]
+            .str.lower()
+            .isin(failed_set)
+        ]
+    except pd.errors.EmptyDataError:
+        print("No failed counties found for state:", state_name)
+
+    group1 = tuple(
+        sorted(state_df.loc[state_df["rucc"] == 1, "county"].unique())
+    )
+
+    group2 = tuple(
+        sorted(state_df.loc[state_df["rucc"] != 1, "county"].unique())
+    )
+
+    county_groups = (group1, group2)
+    if group =='rucc1':
+        return group1
+    elif group =='nonrucc1':
+        return group2
+    else:
+        return county_groups
+
+
+
+def calculate_saledi(state, event_data, type):
+    large_event_threshold = 0.05
     # filter by "large events"
     event_data_large=event_data[event_data['customer_hours_norm']>=large_event_threshold]
-    SALEDI=np.sum(np.log(event_data_large['customer_hours_norm']/large_event_threshold))*1/10
-    # now calculate SALEDI for each gust bin
-    SALEDI_by_bin = (
-        event_data_large
-        .groupby('max_tmpf')['customer_hours_norm']
-        .apply(lambda x: np.sum(np.log(x / large_event_threshold)) / 10)
-    )
-    print(f'SALEDI for {county} County: {SALEDI}')
-    print(f'SALEDI by bin: {SALEDI_by_bin}')
-    SALEDI_by_bin_cumsum=SALEDI_by_bin.cumsum()
-    # plt.plot(SALEDI_by_bin_cumsum.index, SALEDI_by_bin_cumsum, color=color)
-    return SALEDI_by_bin
+    county_group=find_rucc_groups(state, type)
+    SALEDI=[]
+    SALEDI_past_20=[]
+    for county in county_group:
+        event_data_large_county=event_data_large[event_data_large['counties_affected']==f'{state}_{county}']
+        SALEDI_county=np.sum(np.log(event_data_large_county['customer_hours_norm']
+                               / large_event_threshold)) * 1 / 10
+        if np.isnan(SALEDI_county) or np.isinf(SALEDI_county):
+            continue
+        else:
+            SALEDI.append(SALEDI_county)
+        event_data_large_county_past_20=event_data_large_county[event_data_large_county['max_gust']>=20]
+        SALEDI_past_20_county=np.sum(np.log(event_data_large_county_past_20['customer_hours_norm']
+                                     / large_event_threshold)) * 1 / 10
+        if np.isnan(SALEDI_past_20_county) or np.isinf(SALEDI_past_20_county):
+            continue
+        else:
+            SALEDI_past_20.append(SALEDI_past_20_county)
 
-def plot_wind_temp_relationship(ds,color):
-    var1 = ds['gust'].where(ds['gust'] != 0, ds['sknt'])
-    var1 = var1.round(1)
-    var2=ds['tmpf'].round(1)
-    plt.scatter(var2,var1,color=color)
-    plt.title('Wind-Temperature Relationship')
-    plt.ylabel('Max Wind Speed')
-    plt.xlabel('Temperature (Degrees F)')
-    plt.ylim(0,80)
-    plt.xlim(-10,120)
+    total_SALEDI=sum(SALEDI) / len(SALEDI)
+    total_SALEDI_past_20=sum(SALEDI_past_20) / len(SALEDI_past_20)
+    print(f"SALEDI: {total_SALEDI}")
+    print(f'SALEDI for large events >= 20 MPH: {total_SALEDI_past_20}')
+    print(f'Percent large events attributed to wind: {total_SALEDI_past_20/total_SALEDI*100:.2f}%')
 
-    plt.show()
+    # SALEDI=np.sum(np.log(event_data_large['customer_hours_norm']/large_event_threshold))*1/5
+    # # now calculate SALEDI for each gust bin
+    # SALEDI_by_bin = (
+    #     event_data_large
+    #     .groupby('max_gust')['customer_hours_norm']
+    #     .apply(lambda x: np.sum(np.log(x / large_event_threshold)) / 5)
+    # )
+    # print(f'SALEDI for {county}: {SALEDI}')
+    # print(f'SALEDI by bin for {county}: {SALEDI_by_bin}')
 
 def create_probability_mapping(ds,multi_county,state,county, weather_variable):
 
@@ -1052,38 +1248,76 @@ def create_probability_mapping(ds,multi_county,state,county, weather_variable):
         )
         .sort_index()
     )
+    grouped=grouped[grouped['sample_size']>100]
     grouped.to_parquet(f'results/outage_probability_{state}_{county}_{weather_variable}.parquet')
 
+
 # 2) Helper to fit and predict
-def fit_loglinear(x,y_obs,x_new, label):
+def fit_loglinear(x, y_obs, x_new, label):
     y_log = np.log(y_obs + 1e-10)
+
     with pm.Model() as m:
-        if label=='probability':
-            a = pm.Uniform('a', lower=-15, upper=0)
-            b     = pm.Uniform('b', lower=0, upper=0.5)
+        if label == 'probability':
+            a = pm.Normal('a', -15, 0)
+            b = pm.Normal('b', 0, 0.5)
+            mu_log = a + b * x
+
         else:
-            a=pm.Uniform('a', lower=-10, upper=5)
-            b=pm.Uniform('b', lower=-1, upper=1)
-        sigma = pm.HalfNormal('sigma', sigma=1)
+            a = pm.Normal('a', -10, 10)
+            b = pm.Normal('b', -1, 1)
+            c = pm.HalfNormal("c", sigma=0.01)
+            mu_log = a + b * x + c * x ** 2
 
-        mu_log = a + b*x
-        pm.Normal('y', mu=mu_log, sigma=sigma, observed=y_log)
+        sigma_a = pm.Normal("sigma_a", 0, 1)
+        sigma_b = pm.Normal("sigma_b", 0, 1)
 
-        trace = pm.sample(1000, tune=1000, chains=4, cores=1,
-                          target_accept=0.95,
-                          random_seed=42, return_inferencedata=True)
+        sigma = pm.Deterministic("sigma", pm.math.exp(sigma_a + sigma_b * x))
+
+        pm.Normal(
+            'y',
+            mu=mu_log,
+            sigma=sigma,
+            observed=y_log
+        )
+
+        trace = pm.sample(
+            1000,
+            tune=1000,
+            chains=4,
+            cores=1,
+            target_accept=0.95,
+            random_seed=42,
+            return_inferencedata=True
+        )
 
     post = az.extract(trace).to_dataframe()
+
     a_samps = post['a'].values[:, None]
     b_samps = post['b'].values[:, None]
-    param_stats = post[['a', 'b']].agg(['mean', 'std']).T
-    param_stats.columns = ['posterior_mean', 'posterior_std']
-    print(param_stats)
 
-    mu_log_new = a_samps + b_samps * x_new
-    y_new = np.exp(mu_log_new)
-    return y_new.mean(axis=0), y_new.std(axis=0), x_new
+    if label=='single':
+        c_samps = post['c'].values[:, None]
+        param_stats = post[['a', 'b', 'c', 'sigma']].agg(['mean', 'std']).T
+        param_stats.columns = ['posterior_mean', 'posterior_std']
+        print(param_stats)
+        # Linear predictor in log space
+        mu_log_new = a_samps + b_samps * x_new + c_samps * x_new ** 2
 
+    else:
+        param_stats = post[['a', 'b', 'sigma']].agg(['mean', 'std']).T
+        param_stats.columns = ['posterior_mean', 'posterior_std']
+        print(param_stats)
+        # Linear predictor in log space
+        mu_log_new = a_samps + b_samps * x_new
+
+    # Correct LogNormal mean:
+    # E[Y|x,a,b,sigma] = exp(mu + sigma^2/2)
+    y_draws = np.exp(mu_log_new)
+    y_mean = y_draws.mean(axis=0)
+    lower = np.percentile(y_draws, 2.5, axis=0)
+    upper = np.percentile(y_draws, 97.5, axis=0)
+
+    return y_mean, lower, upper, x_new
 
 def fit_sigmoid(x,y,x_new):
     with pm.Model() as m:
@@ -1114,8 +1348,9 @@ def fit_sigmoid(x,y,x_new):
 
     return mu_new.mean(axis=0), mu_new.std(axis=0), x_new
 
+
 def plot(df, state, county, target_variable,
-         target_output, color, mean, std, label, x,  x_new):
+         target_output, color, mean, lower, upper, label, x,  x_new):
 
     plt.scatter(x, df[target_output], color=color, alpha=0.5, s=80,label='Observed Data')
     # posterior mean
@@ -1123,47 +1358,42 @@ def plot(df, state, county, target_variable,
     # 95% band
     plt.fill_between(
         x_new,
-        mean - 2*std,
-        mean + 2*std,
+        lower,
+        upper,
         color=color, alpha=0.2, label='95% CI (±2σ)'
     )
     plt.ylabel(target_output, fontsize=18, fontweight='bold')
     if label=='single':
         plt.yscale('log')
+        plt.ylim(10e-5,10e2)
     if label=='probability':
         plt.ylim(0,1)
     plt.grid(True, linestyle='--', alpha=0.4)
-    plt.xlim(0,65)
+    if target_variable=='max_gust' or target_variable=='gust':
+        plt.xlim(0,65)
+    else:
+        plt.xlim(0,120)
     plt.tick_params(axis='both', which='major', labelsize=14)
     plt.legend(fontsize=16, loc='upper left')
     data_results = pd.DataFrame(columns=[target_variable, 'y_avg', 'y_lower', 'y_upper'])
     data_results[target_variable]=x_new
     data_results['y_avg']=mean
-    data_results['y_lower']=mean - 2*std
-    data_results['y_upper']=mean + 2*std
+    data_results['y_lower']=lower
+    data_results['y_upper']=upper
     if label=='probability':
         # fix columns to 1
         cols = ["y_avg", "y_lower", "y_upper"]
         data_results[cols] = data_results[cols].clip(upper=1)
-    data_results.to_csv(f'results/bayesian_{label}_{state}_{county}_{target_variable}_{target_output}.csv')
+    data_results.to_csv(f'results/bayesian_{label}_{state}_{county}_{target_variable}_{target_output}_spatiotemporal.csv')
 
     plt.xlabel(f'{target_variable}', fontsize=18, fontweight='bold')
     plt.tick_params(axis='both', which='major', labelsize=14)
     plt.xticks(fontsize=12)
     # plt.tight_layout()
-    plt.savefig(f'results/bayesian_{label}_{state}_{county}_{target_variable}_{target_output}.png')
+    plt.savefig(f'results/bayesian_{label}_{state}_{county}_{target_variable}_{target_output}_spatiotemporal.png')
     plt.close()
 
 
-# inputs
-# state = 'Illinois'
-# county = 'semi_urban'
-# color = 'indigo'
-
-#
-# # # load datasets for loglinear fits
-# df=pd.read_parquet(f'../../events_stats/county_events/{state}/{county}_event_stats.parquet')
-# df = pd.read_parquet(f'../../events_stats/spatiotemporal_events/event_stats_{state}_{county}.parquet')
 def load_loglinear(state, county, df, color, weather_variable):
     target_variable = f'max_{weather_variable}'
     target_output = 'customer_hours_norm'
@@ -1172,13 +1402,20 @@ def load_loglinear(state, county, df, color, weather_variable):
         df.loc[mask, target_variable] = df.loc[mask,'max_sknt']
     label='single'
     df[target_variable]=df[target_variable].round()
+    # Replacing infinite with nan
+    df.replace([np.inf, -np.inf], np.nan, inplace=True)
+    # Dropping all the rows with nan values
+    df.dropna(inplace=True)
     df=df.groupby(target_variable, as_index=False)[target_output].mean()
-    df=df[df[target_variable]<=65]
+    if target_variable=='max_gust':
+        df=df[df[target_variable]<=65]
+        x_new = np.linspace(0, 65, 66)
+    else:
+        x_new = np.linspace(0, 120, 121)
     x = df[target_variable].values
     y=df[target_output].values
-    x_new = np.linspace(0, 65, 66)
-    mean, std, x_new = fit_loglinear(x,y,x_new, label)
-    plot(df, state, county, target_variable, target_output, color, mean, std, label, x=x, x_new=x_new)
+    mean, lower, upper, x_new = fit_loglinear(x,y,x_new, label)
+    plot(df, state, county, target_variable, target_output, color, mean, lower, upper, label, x=x, x_new=x_new)
 # load datasets for sigmoid fits
 
 def load_sigmoid(state,county,color, weather_variable):
@@ -1187,58 +1424,362 @@ def load_sigmoid(state,county,color, weather_variable):
     label=target_output
     x = df[weather_variable].values
     y=df[target_output].values
-    x_new = np.linspace(0, 65, 66)
-    mean, std, x_new = fit_loglinear(x,y,x_new, label)
+    if weather_variable=='gust':
+        x_new = np.linspace(0, 65, 66)
+    else:
+        x_new = np.linspace(0, 120, 121)
+    mean, lower, upper, x_new = fit_loglinear(x,y,x_new, label)
 
-    plot(df, state, county, weather_variable, target_output, color, mean, std, label, x=x, x_new=x_new)
+    plot(df, state, county, weather_variable, target_output, color, mean, lower, upper, label, x=x, x_new=x_new)
 
+def hat_graph(groups, setting):
+    target_variable = 'max_gust'
+    target_output = 'customer_hours_norm'
 
-# inputs - change as needed
-# state='California'
-# county='Los Angeles'
-# start='2014'
-# end='2024'
-# color='red'
-# value=0.75
-# weather_variable="gust"
-# outage_variable='customer_hours'
-# plot_temp_wind(state, county)
-# plot_multiple_bayesian_fits(weather_variable,'customer_hours')
-#plot_multiple_wind_profiles(weather_variable)
-# VAR, location, ALEC, F_r_w = calculate_VAR_CVAR(state, county, weather_variable,'customer_hours','y_avg')
-# plot_event_profile(location, state,county, color, VAR, ALEC, F_r_w, weather_variable,'customer_hours')
+    fig, ax = plt.subplots(figsize=(15, 6))
 
-# counties = [
-#     ("Washington", "King", "blue"),
-#     ("Massachusetts", "Suffolk", "green"),
-#     ("California", "Los Angeles", "red"),
-#     ("Florida", "Miami-Dade", "teal"),
-#     ("Arizona", "Maricopa", "magenta"),
-#     ("Texas", "Harris", "goldenrod"),
-#     ("Illinois", "Cook", "black"),
-#     ("New York", "Kings", "brown")
-# ]
-# counties=[
-#     ("Illinois", "Cook", "black"),
-#     ("Illinois", "semi_urban", "indigo"),
-#     ("Illinois","rural", "purple")
-# ]
+    # ---------- Layout ----------
+    state_spacing = 3.0  # distance between state groups
+    bar_offset = 0.45  # separation within state
+    bar_width = 0.70
 
-# plot_multiple_wind_profiles('gust', counties)
+    urban_positions = []
+    rural_positions = []
+    state_centers = []
 
-# plot_large_events_profile(counties)
-    # ds=xr.open_dataset(f'../../weather_data/{state}/cleaned_weather_{state}_{county}_2015_2025.nc')
-    # var = ds['gust'].where(ds['gust'] != 0, ds['sknt'])
-    # ds_small = xr.Dataset({
-    #     'gust': var
-    # })
+    for i in range(len(groups)):
+        center = i * state_spacing
+
+        urban_positions.append(center - bar_offset)
+        rural_positions.append(center + bar_offset)
+
+        state_centers.append(center)
+
+    # ---------- Alternate background shading ----------
+    for i, center in enumerate(state_centers):
+        if i % 2 == 0:
+            ax.axvspan(
+                center - 1.5,
+                center + 1.5,
+                color='k',
+                alpha=0.025,
+                zorder=0
+            )
+
+    # ---------- Plot ----------
+    for i, (state, label, urban_color, rural_color) in enumerate(groups):
+        urban_file = pd.read_csv(
+            f"results/bayesian_{setting}_"
+            f"{state}_{state}_rucc1_"
+            f"{target_variable}_{target_output}_spatiotemporal.csv"
+        )
+
+        rural_file = pd.read_csv(
+            f"results/bayesian_{setting}_"
+            f"{state}_{state}_nonrucc1_"
+            f"{target_variable}_{target_output}_spatiotemporal.csv"
+        )
+
+        urban = urban_file.loc[
+            urban_file[target_variable] == 20
+            ].iloc[0]
+
+        rural = rural_file.loc[
+            rural_file[target_variable] == 20
+            ].iloc[0]
+
+        # Urban CI rectangle
+        ax.bar(
+            urban_positions[i],
+            urban["y_upper"] - urban["y_lower"],
+            width=bar_width,
+            bottom=urban["y_lower"],
+            color=urban_color,
+            alpha=0.70,
+            edgecolor='0.35',
+            linewidth=0.8,
+            zorder=3
+        )
+
+        # Rural CI rectangle
+        ax.bar(
+            rural_positions[i],
+            rural["y_upper"] - rural["y_lower"],
+            width=bar_width,
+            bottom=rural["y_lower"],
+            color=rural_color,
+            alpha=0.70,
+            edgecolor='0.35',
+            linewidth=0.8,
+            zorder=3
+        )
+
+        # Point estimate markers
+        ax.hlines(
+            urban["y_avg"],
+            urban_positions[i] - bar_width * 0.28,
+            urban_positions[i] + bar_width * 0.28,
+            color='black',
+            linewidth=2.0,
+            zorder=4
+        )
+
+        ax.hlines(
+            rural["y_avg"],
+            rural_positions[i] - bar_width * 0.28,
+            rural_positions[i] + bar_width * 0.28,
+            color='black',
+            linewidth=2.0,
+            zorder=4
+        )
+
+    # ---------- Urban/Rural labels ----------
+    bar_positions = []
+    bar_labels = []
+
+    for u, r in zip(urban_positions, rural_positions):
+        bar_positions.extend([u, r])
+        bar_labels.extend(["Urban", "Rural"])
+
+    ax.set_xticks(bar_positions)
+    ax.set_xticklabels(bar_labels, fontsize=10)
+
+    # ---------- State labels beneath ----------
+    secax = ax.secondary_xaxis('bottom')
+
+    secax.set_xticks(state_centers)
+    secax.set_xticklabels(
+        [g[0] for g in groups],
+        fontsize=11,
+        fontweight='semibold'
+    )
+
+    secax.spines['bottom'].set_visible(False)
+    secax.tick_params(
+        axis='x',
+        pad=28,
+        length=0
+    )
+
+    # ---------- Labels ----------
+    ax.set_ylabel(
+        'Estimated Event Magnitude',
+        fontsize=13
+    )
+
+    ax.set_xlabel('')
+
+    # ---------- Grid ----------
+    ax.grid(
+        axis='y',
+        linestyle='--',
+        alpha=0.25,
+        linewidth=0.8
+    )
+
+    ax.set_axisbelow(True)
+
+    # ---------- Spines ----------
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
+    ax.spines['left'].set_color('0.3')
+    ax.spines['bottom'].set_color('0.3')
+
+    # ---------- Legend ----------
+    legend_elements = [
+        Patch(
+            facecolor='0.5',
+            alpha=0.8,
+            edgecolor='0.35',
+            label='Urban'
+        ),
+        Patch(
+            facecolor='0.5',
+            alpha=0.35,
+            edgecolor='0.35',
+            label='Rural'
+        )
+    ]
+
+    ax.legend(
+        handles=legend_elements,
+        frameon=False,
+        loc='upper left',
+        ncol=2
+    )
+
+    plt.tight_layout()
+    plt.show()
+    # target_variable='max_gust'
+    # target_output='customer_hours_norm'
+    # fig, ax = plt.subplots(figsize=(14, 6))
+    # x = np.arange(len(groups))
+    # width=0.35
     #
-    # df = (
-    #     ds[['gust']]
-    #     .to_dataframe()
-    #     .reset_index()[['time', 'gust']]
-    # )
-    # df['gust']=df['gust'].round()
-    # df=df[df['gust']>0]
-    # double_peak='False'
-    # plot_weather_distribution(df, 'gust', county, state, color, double_peak)
+    # for i, (state, label, urban_color, rural_color) in enumerate(groups):
+    #     urban_file=pd.read_csv(f"results/bayesian_{setting}_"
+    #         f"{state}_{state}_rucc1_"
+    #         f"{target_variable}_{target_output}.csv"
+    #     )
+    #     rural_file=pd.read_csv(f"results/bayesian_{setting}_"
+    #         f"{state}_{state}_nonrucc1_"
+    #         f"{target_variable}_{target_output}.csv"
+    #     )
+    #     urban_at_20=urban_file[urban_file[target_variable]==20]
+    #     rural_at_20=rural_file[rural_file[target_variable]==20]
+    #     # Urban hat
+    #     ax.bar(
+    #         x[i] - width / 2,
+    #         urban_at_20['y_upper'] - urban_at_20['y_lower'],
+    #         width,
+    #         bottom=urban_at_20['y_lower'],
+    #         color=urban_color,
+    #         edgecolor='dimgray',
+    #         linewidth = 0.8,
+    #         alpha=0.75
+    #     )
+    #
+    #     # Rural hat
+    #     ax.bar(
+    #         x[i] + width / 2,
+    #         rural_at_20['y_upper'] - rural_at_20['y_lower'],
+    #         width,
+    #         bottom=rural_at_20['y_lower'],
+    #         color=rural_color,
+    #         edgecolor='dimgray',
+    #         linewidth=0.8,
+    #         alpha=0.75
+    #     )
+    #
+    #     # Estimate marker
+    #     ax.hlines(
+    #         urban_at_20['y_avg'],
+    #         x[i] - width * 0.8,
+    #         x[i] - width * 0.2,
+    #         color='dimgray',
+    #         linewidth=0.8
+    #     )
+    #
+    #     ax.hlines(
+    #         rural_at_20['y_avg'],
+    #         x[i] + width * 0.2,
+    #         x[i] + width * 0.8,
+    #         color='dimgray',
+    #         linewidth=0.8
+    #     )
+    #
+    #
+    # ax.set_xticks(x)
+    # ax.set_xticklabels([g[0] for g in groups],
+    #                    rotation=45,
+    #                    ha='right')
+    # ax.set_ylabel('Estimated Customer-Hour Losses (Normalized)')
+    # ax.set_xlabel('State')
+    # plt.tight_layout()
+    # plt.show()
+
+def plot_event_map():
+    state='California'
+    county='Los Angeles'
+    ds=xr.open_dataset(f'../../merged_data/{state}/merged_data_{state}_{county}_2015_2025.nc')
+    ds_selected = ds.where(ds.event_number_eaglei == 907, drop=True)
+    url = "https://www2.census.gov/geo/tiger/GENZ2023/shp/cb_2023_us_county_20m.zip"
+    counties = gpd.read_file(url)
+    # King County
+    king_county = counties[
+        (counties["NAME"] == county) &
+        (counties["STATE_NAME"] == state)
+        ]
+
+    # Neighboring counties
+    neighbors = counties.cx[
+        king_county.total_bounds[0] - 2: king_county.total_bounds[2] + 2,
+        king_county.total_bounds[1] - 2: king_county.total_bounds[3] + 2
+    ]
+
+    # Build station dataframe
+    stations_df = pd.DataFrame({
+        "lon": ds_selected.station.lon.values,
+        "lat": ds_selected.station.lat.values,
+        "name": ds_selected.station.values,  # adjust if different
+    }).drop_duplicates()
+
+    stations_gdf = gpd.GeoDataFrame(
+        stations_df,
+        geometry=gpd.points_from_xy(
+            stations_df.lon,
+            stations_df.lat
+        ),
+        crs="EPSG:4326"
+    )
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+
+    # Context counties
+    neighbors.plot(
+        ax=ax,
+        color="#f2f2f2",
+        edgecolor="lightgray",
+        linewidth=0.5,
+    )
+
+    # King County fill
+    king_county.plot(
+        ax=ax,
+        color="#F4CCCC",
+        edgecolor="#B2182B",
+        linewidth=2,
+    )
+
+    # Stations
+    stations_gdf.plot(
+        ax=ax,
+        color="black",
+        markersize=40,
+        zorder=5,
+    )
+
+    # Labels
+    for _, row in stations_gdf.iterrows():
+        ax.annotate(
+            row["name"],
+            (row.geometry.x, row.geometry.y),
+            xytext=(4, 4),
+            textcoords="offset points",
+            fontsize=9,
+            zorder=6,
+        )
+
+    # Zoom
+    xmin, ymin, xmax, ymax = king_county.total_bounds
+    pad = 0.5
+
+    ax.set_xlim(xmin - 1, xmax + 1)
+    ax.set_ylim(ymin - 0.5, ymax + 0.5)
+
+    # Remove coordinate axes
+    ax.set_axis_off()
+    ax.set_title(
+        "Weather Stations in Los Angeles County, CA",
+        fontsize=16,
+        pad=15
+    )
+    plt.tight_layout()
+    plt.show()
+
+
+groups=[
+    ["Washington", "Washington_rucc1","#2166AC", "#D1E5F0"],
+    ["Illinois", "Illinois_rucc1", "#54278F", "#DADAEB"],
+    ["New York", "New York_rucc1", "#8C510A", "#DFC27D"],
+    ["Massachusetts", "Massachusetts_rucc1", "#1B7837", "#D9F0D3"],
+    ["California", "California_rucc1", "#B2182B", "#F4CCCC"],
+    ["Arizona", "Arizona_rucc1", "#C51B7D", "#F4CAE4"],
+    ["Texas", "Texas_rucc1", "#B8860B", "#F6E8A6"],
+    ["Florida", "Florida_rucc1", "#01665E", "#C7EAE5"]
+]
+# plot_multiple_outage_probabilities_fig(groups)
+# plot_multiple_outage_magnitudes_fig(groups)
+# hat_graph(groups, setting='single')
+# plot_event_map()
