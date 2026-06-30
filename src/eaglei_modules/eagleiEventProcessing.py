@@ -118,6 +118,7 @@ def load_eaglei_state_data(state_name: str,
     - 2021-2022: fips_code, county, state, customers_out, run_start_time
     - 2023: fips_code, county, state, sum, run_start_time
     - 2024: fips_code, county, state, customers_out, run_start_time, total_customers
+    - 2025: fips_code, county, state, customers_out, run_start_time
     
     Additionally, extracts and separates the total_customers column information into
     a separate file for easier access.
