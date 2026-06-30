@@ -50,6 +50,9 @@ def main(state: str,
     county_data.identify_gaps(min_customers_before_gap = config.get("data_cleaning_parameters.min_customers_before_gap", 20),
                               min_customers_after_gap = config.get("data_cleaning_parameters.min_customers_after_gap", 2), 
                               max_gap_minutes = config.get("data_cleaning_parameters.max_gap_minutes", 24))
+
+    # now identify duplicates and fix them
+    county_data.drop_duplicate_timestamps()
     
     # For convenience, we can automatically decide the rank threshold and fill the gaps above that threshold
     # The automatic rank threshold decision is based on analyzing the gap ranking metrics and selecting a threshold that balances data integrity and completeness

@@ -1159,7 +1159,8 @@ def _get_eaglei_event_stats_single_event(eaglei_df: pd.DataFrame,
                                          event_method: str = 'ac',
                                          timestamp_column: str = constants.TIMESTAMP_COL, 
                                          customer_column: str = constants.CUSTOMERS_COL,
-                                         counties: str = 'None') -> Dict:
+                                         counties: str = 'None',
+                                         spatiotemporal: bool = False) -> Dict:
     """
     Get statistics for a single event number.
     
@@ -1203,30 +1204,26 @@ def _get_eaglei_event_stats_single_event(eaglei_df: pd.DataFrame,
         - counties_affected : str
             Names of counties affected
     """
-    if "eaglei" in event_method.lower():
+    if not spatiotemporal:
         outages, restores, performance_process = get_eaglei_processes(eaglei_df, event_number, event_method,
                                                                       timestamp_column, customer_column)
-        # filtered = eaglei_df[eaglei_df[f'event_number_{event_method}'] == event_number]
-        # counties=list(filtered['county'].unique())
-        # if filtered["county"].nunique() > 1:
-        #     raise ValueError(
-        #         f"Multiple counties found for event {event_number}: {counties}. This requires spatiotemporal "
-        #         f"processing. Please set the correct event method for stats calculation."
-        #     )
+        filtered = eaglei_df[eaglei_df[f'event_number_{event_method}'] == event_number]
+        if filtered["county"].nunique() > 1:
+            raise ValueError(
+                f"Multiple counties found for event {event_number}: {counties}. This requires spatiotemporal "
+                f"processing. Please set the correct event method for stats calculation."
+            )
+        counties = filtered['county'].iat[0]
+
     else:
         outages, restores, performance_process= get_eaglei_spatiotemporal_processes(eaglei_df, event_number, event_method,
                                                                                      timestamp_column, customer_column)
-        counties = set(
-            c
-            for _, row in eaglei_df[eaglei_df[f'event_number_{event_method}'] == event_number].iterrows()
-            for c in row["county"].split("Illinois") # to do: make generalizable to state
-            if c
-        )
-        counties = ', '.join(map(str, counties))
+        filtered=eaglei_df[eaglei_df[f'event_number_{event_method}'] == event_number]
+        counties = filtered["county"].dropna().unique().tolist()
 
     if len(performance_process) == 0:
         print(f'No performance process found for event number {event_number}')
-        return {'event_number': event_number,
+        return {f'event_number': event_number,
                 'start_time': None,
                 'end_time': None,
                 'duration_hours': 0,
@@ -1254,7 +1251,7 @@ def _get_eaglei_event_stats_single_event(eaglei_df: pd.DataFrame,
 
     
     return {
-        'event_number': event_number,
+        f'event_number': event_number,
         'start_time': start_time,
         'end_time': end_time,
         'duration_hours': duration,
@@ -1296,16 +1293,22 @@ def get_eaglei_event_stats(eaglei_df: pd.DataFrame,
     pd.DataFrame or dict
         A DataFrame if multiple event numbers are provided, or a dictionary if a single event number is provided.
     """
-
+    if "spatiotemporal" in event_method:
+        spatiotemporal=True
+    else:
+        spatiotemporal=False
     if len(event_numbers) == 1:
         return _get_eaglei_event_stats_single_event(eaglei_df, event_numbers[0], event_method, timestamp_column,
-                                                    customer_column, counties)
+                                                    customer_column, counties, spatiotemporal)
     else:
         # apply the function to all event numbers and create a DataFrame
         event_stats = []
+        event_numbers=np.sort(event_numbers)
         for event_number in event_numbers:
             stats = _get_eaglei_event_stats_single_event(eaglei_df, event_number, event_method, timestamp_column,
-                                                         customer_column, counties)
+                                                         customer_column, counties, spatiotemporal)
+            if event_number % 100 == 0:
+                print(f"  Processing {event_method} event {event_number}/{len(event_numbers)}")
             # only add the stats if start_time is not None (i.e., event exists)
             if stats['start_time'] is not None:
                 event_stats.append(stats)
@@ -1947,7 +1950,7 @@ def create_county_adjacency_graph(state_fips_prefix: str | None = None) -> nx.Gr
                    fips_code=row['GEO_ID'],
                    geometry=row['geometry'],
                    census_area=row['CENSUSAREA'])
-    
+
     # Check all pairs of counties for adjacency and calculate overlap
     for i, county1 in gdf.iterrows():
         for j, county2 in gdf.iterrows():
@@ -2014,12 +2017,14 @@ def create_multi_state_county_adjacency_graph(county_fips: List[str]) -> nx.Grap
     counties_shape_data = load_counties_shapefile()
     if counties_shape_data is None:
         raise RuntimeError("Failed to load county shapefile data.")
-    
+
+    # remove leading zeros
+    county_fips_set = {int(fips) for fips in county_fips}
     # Filter for counties in the specified counties
     filtered_counties = {
         "type": "FeatureCollection",
         "features": [
-            f for f in counties_shape_data['features'] if (f['properties']['STATE']+f['properties']['COUNTY']) in county_fips
+            f for f in counties_shape_data['features'] if int(f['properties']['STATE']+f['properties']['COUNTY']) in county_fips_set
         ]
     }
         
@@ -2030,7 +2035,7 @@ def create_multi_state_county_adjacency_graph(county_fips: List[str]) -> nx.Grap
     # Since 'STATE' is a FIPS code, we can map it to state abbreviation using contants.STATE_FIPS_DICT, but we need to reverse the dictionary first
     reversed_state_fips_dict = {v: k.title() for k, v in constants.STATE_FIPS_DICT.items()}
     gdf['STATE_NAME'] = gdf['STATE'].map(reversed_state_fips_dict)
-    gdf['NAME_TO_USE'] = gdf['STATE_NAME'] + gdf['NAME']
+    gdf['NAME_TO_USE'] = gdf['STATE_NAME'] + '_' + gdf['NAME']
 
     # Project to a suitable CRS for USA Mainland (NAD83 / Conus Albers)
     # This ensures accurate distance/area calculations
@@ -3111,102 +3116,260 @@ def apply_spatiotemporal_grouping_optimized(combined, graph_of_counties,
     county_neighbors = {}
     for county in df['county'].unique():
         county_neighbors[county] = get_neighbors_at_level(graph_of_counties, county, level=neighbour_level)
-    
+
     print("Computing time ranges and outage process end times...")
-    # Compute time ranges and outage process end times for all county events
-    county_event_info = df.groupby(['county', county_event_col]).agg({
-        'time': ['min', 'max'],
-        'customers_out': list
-    }).reset_index()
-    
-    county_event_info.columns = ['county', county_event_col, 'time_min', 'time_max', 'customers_list']
-    
-    # Compute outage process end time
-    def compute_outage_process_end(row):
-        customers = row['customers_list']
-        times_for_event = df[(df['county'] == row['county']) & 
-                             (df[county_event_col] == row[county_event_col])]['time'].values
-        
-        if len(set(customers)) == 1:
-            return times_for_event[0]
-        
-        # Find last increase
-        diffs = np.diff(customers)
-        increase_indices = np.where(diffs > 0)[0]
-        
-        if len(increase_indices) > 0:
-            last_increase_idx = increase_indices[-1] + 1
-            return times_for_event[last_increase_idx]
+
+    # sort once so event sequences are chronological
+    df = df.sort_values(['county', county_event_col, 'time'])
+
+    group_cols = ['county', county_event_col]
+
+    results = []
+
+    for (county, event_id), group in df.groupby(group_cols, sort=False):
+
+        customers = group['customers_out'].to_numpy()
+        times = group['time'].to_numpy()
+
+        time_min = times[0]
+        time_max = times[-1]
+
+        # outage process end logic
+        if np.all(customers == customers[0]):
+            outage_process_end = times[0]
         else:
-            return times_for_event[0]
-    
-    county_event_info['outage_process_end'] = county_event_info.apply(compute_outage_process_end, axis=1)
-    
-    # Add temporal event info
+            diffs = np.diff(customers)
+            increase_indices = np.where(diffs > 0)[0]
+
+            if len(increase_indices):
+                outage_process_end = times[increase_indices[-1] + 1]
+            else:
+                outage_process_end = times[0]
+
+        results.append({
+            'county': county,
+            county_event_col: event_id,
+            'time_min': time_min,
+            'time_max': time_max,
+            'outage_process_end': outage_process_end
+        })
+
+    county_event_info = pd.DataFrame(results)
+
+    # merge back
     df_with_temporal = df.merge(
-        county_event_info[['county', county_event_col, 'time_min', 'time_max', 'outage_process_end']],
+        county_event_info,
         on=['county', county_event_col],
         how='left'
     )
-    
+
+    # Build groups once instead of repeatedly filtering
+    temporal_groups = {
+        temporal_event_num: group
+        for temporal_event_num, group in
+        df_with_temporal.groupby(temporal_event_col, sort=False)
+        if temporal_event_num > 0
+    }
+
+    #
+    # print("Computing time ranges and outage process end times...")
+    # # Compute time ranges and outage process end times for all county events
+    # county_event_info = df.groupby(['county', county_event_col]).agg({
+    #     'time': ['min', 'max'],
+    #     'customers_out': list
+    # }).reset_index()
+    #
+    # county_event_info.columns = ['county', county_event_col, 'time_min', 'time_max', 'customers_list']
+    #
+    # # Compute outage process end time
+    # def compute_outage_process_end(row):
+    #     customers = row['customers_list']
+    #     times_for_event = df[(df['county'] == row['county']) &
+    #                          (df[county_event_col] == row[county_event_col])]['time'].values
+    #
+    #     if len(set(customers)) == 1:
+    #         return times_for_event[0]
+    #
+    #     # Find last increase
+    #     diffs = np.diff(customers)
+    #     increase_indices = np.where(diffs > 0)[0]
+    #
+    #     if len(increase_indices) > 0:
+    #         last_increase_idx = increase_indices[-1] + 1
+    #         return times_for_event[last_increase_idx]
+    #     else:
+    #         return times_for_event[0]
+    #
+    # county_event_info['outage_process_end'] = county_event_info.apply(compute_outage_process_end, axis=1)
+    #
+    # # Add temporal event info
+    # df_with_temporal = df.merge(
+    #     county_event_info[['county', county_event_col, 'time_min', 'time_max', 'outage_process_end']],
+    #     on=['county', county_event_col],
+    #     how='left'
+    # )
+
     print("Building spatiotemporal graph...")
     # Build graph for all events
     event_graph = nx.Graph()
     event_graph.add_nodes_from(df[county_event_col].unique())
     
-    # Process each temporal event
-    temporal_events = df[temporal_event_col].unique()
-    temporal_events = temporal_events[temporal_events > 0]
-    
+    # # Process each temporal event
+    # temporal_events = df[temporal_event_col].unique()
+    # temporal_events = temporal_events[temporal_events > 0]
+    #
+
+    temporal_events = list(temporal_groups.keys())
+
     spatiotemporal_assignments = {}
     next_global_id = 1
     
-    for idx, temporal_event_num in enumerate(temporal_events):
+    # for idx, temporal_event_num in enumerate(temporal_events):
+    for idx, (temporal_event_num, events_in_temporal) in enumerate(
+            temporal_groups.items()
+    ):
         if verbose > 0 and idx % 100 == 0:
             print(f"  Processing temporal event {idx+1}/{len(temporal_events)}")
-        
-        # Get county events in this temporal event
-        temporal_mask = df_with_temporal[temporal_event_col] == temporal_event_num
-        events_in_temporal = df_with_temporal[temporal_mask]
-        
         # Get unique county events
         unique_county_events = events_in_temporal[[
-            'county', county_event_col, 'time_min', 'time_max', 'outage_process_end'
+            'county',
+            county_event_col,
+            'time_min',
+            'time_max',
+            'outage_process_end'
         ]].drop_duplicates()
-        
+
         # Create subgraph for this temporal event
         subgraph = nx.Graph()
-        subgraph.add_nodes_from(unique_county_events[county_event_col].values)
-        
-        # Add edges based on spatial and temporal conditions
-        for i, row_i in unique_county_events.iterrows():
-            for j, row_j in unique_county_events.iterrows():
-                if i >= j:
+        subgraph.add_nodes_from(
+            unique_county_events[county_event_col].values
+        )
+
+        events = list(
+            unique_county_events[
+                ['county',
+                 county_event_col,
+                 'time_min',
+                 'time_max',
+                 'outage_process_end']
+            ].itertuples(index=False)
+        )
+
+        for idx_i, row_i in enumerate(events):
+
+            for row_j in events[idx_i + 1:]:
+
+                if row_j.county not in county_neighbors[row_i.county]:
                     continue
-                
-                # Check spatial condition
-                if row_j['county'] not in county_neighbors[row_i['county']]:
-                    continue
-                
-                # Check temporal condition
+
                 if time_overlap_method == 'outage_process_overlap':
-                    overlaps = (row_i['time_min'] <= row_j['time_max']) and \
-                              (row_j['time_min'] <= row_i['outage_process_end'])
-                else:  # standard_overlap
-                    overlaps = (row_i['time_min'] <= row_j['time_max']) and \
-                              (row_i['time_max'] >= row_j['time_min'])
-                
+                    overlaps = (
+                            row_i.time_min <= row_j.time_max and
+                            row_j.time_min <= row_i.outage_process_end
+                    )
+                else:
+                    overlaps = (
+                            row_i.time_min <= row_j.time_max and
+                            row_i.time_max >= row_j.time_min
+                    )
+
                 if overlaps:
-                    subgraph.add_edge(row_i[county_event_col], row_j[county_event_col])
-        
+                    subgraph.add_edge(
+                        getattr(row_i, county_event_col),
+                        getattr(row_j, county_event_col)
+                    )
+        # Add edges based on spatial and temporal conditions
+        # for i, row_i in unique_county_events.iterrows():
+        #     for j, row_j in unique_county_events.iterrows():
+        #
+        #         if i >= j:
+        #             continue
+        #
+        #         # Check spatial condition
+        #         if (
+        #             row_j['county']
+        #             not in county_neighbors[row_i['county']]
+        #         ):
+        #             continue
+        #
+        #         # Check temporal condition
+        #         if time_overlap_method == 'outage_process_overlap':
+        #
+        #             overlaps = (
+        #                 (row_i['time_min'] <= row_j['time_max']) and
+        #                 (row_j['time_min'] <= row_i['outage_process_end'])
+        #             )
+        #
+        #         else:  # standard_overlap
+        #
+        #             overlaps = (
+        #                 (row_i['time_min'] <= row_j['time_max']) and
+        #                 (row_i['time_max'] >= row_j['time_min'])
+        #             )
+        #
+        #         if overlaps:
+        #             subgraph.add_edge(
+        #                 row_i[county_event_col],
+        #                 row_j[county_event_col]
+        #             )
+
         # Find connected components
-        connected_components = list(nx.connected_components(subgraph))
-        
+        connected_components = list(
+            nx.connected_components(subgraph)
+        )
+
         # Assign global spatiotemporal IDs
         for component in connected_components:
+
             for county_event_id in component:
-                spatiotemporal_assignments[county_event_id] = next_global_id
+                spatiotemporal_assignments[
+                    county_event_id
+                ] = next_global_id
+
             next_global_id += 1
+
+        # Get county events in this temporal event
+        # temporal_mask = df_with_temporal[temporal_event_col] == temporal_event_num
+        # events_in_temporal = df_with_temporal[temporal_mask]
+        #
+        # # Get unique county events
+        # unique_county_events = events_in_temporal[[
+        #     'county', county_event_col, 'time_min', 'time_max', 'outage_process_end'
+        # ]].drop_duplicates()
+        #
+        # # Create subgraph for this temporal event
+        # subgraph = nx.Graph()
+        # subgraph.add_nodes_from(unique_county_events[county_event_col].values)
+        #
+        # # Add edges based on spatial and temporal conditions
+        # for i, row_i in unique_county_events.iterrows():
+        #     for j, row_j in unique_county_events.iterrows():
+        #         if i >= j:
+        #             continue
+        #
+        #         # Check spatial condition
+        #         if row_j['county'] not in county_neighbors[row_i['county']]:
+        #             continue
+        #
+        #         # Check temporal condition
+        #         if time_overlap_method == 'outage_process_overlap':
+        #             overlaps = (row_i['time_min'] <= row_j['time_max']) and \
+        #                       (row_j['time_min'] <= row_i['outage_process_end'])
+        #         else:  # standard_overlap
+        #             overlaps = (row_i['time_min'] <= row_j['time_max']) and \
+        #                       (row_i['time_max'] >= row_j['time_min'])
+        #
+        #         if overlaps:
+        #             subgraph.add_edge(row_i[county_event_col], row_j[county_event_col])
+        #
+        # # Find connected components
+        # connected_components = list(nx.connected_components(subgraph))
+        #
+        # # Assign global spatiotemporal IDs
+        # for component in connected_components:
+        #     for county_event_id in component:
+        #         spatiotemporal_assignments[county_event_id] = next_global_id
+        #     next_global_id += 1
     
     # Apply assignments to DataFrame
     df['event_number_mc_spatiotemporal'] = df[county_event_col].map(spatiotemporal_assignments)
@@ -3937,6 +4100,51 @@ class EagleiCountyProcessor:
         )
         if not self.gaps_customer_df.empty:
             analyze_gap_rankings(self.gaps_customer_df, top_n=10, verbose=self.verbose)
+
+    def drop_duplicate_timestamps(self):
+        if self.county_df[self.timestamp_column].duplicated().any():
+            self.county_df = self.county_df.loc[self.county_df.groupby(self.timestamp_column)[self.customer_column].idxmax()]
+
+    def gaps_distribution_at_quantile(self,
+                                      rank_threshold_quantile: float = 0.40):
+        if self.gaps_customer_df is None:
+            raise ValueError("Gaps must be identified before analyzing distribution.")
+        if self.gaps_customer_df.empty:
+            print("No gaps identified to analyze.")
+            return
+
+        decided_rank_threshold = self.gaps_customer_df['rank'].quantile(rank_threshold_quantile)
+
+        if self.verbose > 0:
+            print(f"Decided Rank Threshold at Quantile {rank_threshold_quantile}: {decided_rank_threshold:.2f}")
+            print(f"Gaps that will be Filled: {self.gaps_customer_df[self.gaps_customer_df['rank']>decided_rank_threshold].shape[0]} out of {self.gaps_customer_df.shape[0]} total gaps ({(self.gaps_customer_df[self.gaps_customer_df['rank']>decided_rank_threshold].shape[0]/self.gaps_customer_df.shape[0])*100:.2f}%)")
+
+        # Distribution of gap durations that will be filled
+        filled_distribution = self.gaps_customer_df[self.gaps_customer_df['rank']>decided_rank_threshold]['duration_category'].value_counts().sort_index()
+        if self.verbose > 0:
+            print("Distribution of gap durations that will be filled:")
+            print(filled_distribution)
+        
+        # Distribution of gap durations that will not be filled
+        not_filled_distribution = self.gaps_customer_df[self.gaps_customer_df['rank']<=decided_rank_threshold]['duration_category'].value_counts().sort_index()
+        if self.verbose > 0:
+            print("Distribution of gap durations that will not be filled:")
+            print(not_filled_distribution)
+
+    def visualize_gaps(self, 
+                       rank_threshold_quantile = None):
+        if self.gaps_customer_df is None:
+            raise ValueError("Gaps must be identified before visualization.")
+        if self.gaps_customer_df.empty:
+            print("No gaps identified to visualize.")
+            return
+        if rank_threshold_quantile is None:
+            if self.gaps_rank_quantile is not None:
+                visualize_gap_analysis(self.gaps_customer_df, self.gaps_rank_quantile)
+            else:
+                print("No rank_threshold_quantile provided and no previous quantile found. Please provide a quantile value.")
+        else:
+            visualize_gap_analysis(self.gaps_customer_df, rank_threshold_quantile)
 
     def fill_gaps(self,
                   auto_decide_rank_threshold: bool = True, 
