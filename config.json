@@ -2,49 +2,45 @@
   "project_name": "EAGLE-I Data Processor",
   "project_version": "1.0.0",
   "project_description": "Comprehensive outage and weather data processing pipeline for Eagle-I dataset analysis",
-  
   "processing_parameters": {
-    "state": "Illinois",
-    "county": "Shelby",
-    "start_year": 2014,
+    "state": "California",
+    "county": "Los Angeles",
+    "start_year": 2015,
     "end_year": 2025
   },
-
   "data_cleaning_parameters": {
     "min_customers_before_gap": 20,
     "min_customers_after_gap": 2,
     "max_gap_minutes": 1440,
     "use_auto_gap_rank_threshold": true,
     "gap_rank_threshold_quantile": 0.4,
-    "event_detection_approach": "flat",
-    "events_customer_threshold": 30
+    "event_detection_approach": "percent_customers",
+    "events_customer_threshold": 0.001
   },
-
   "processing_options": {
     "fetch_weather_data": true,
     "clean_weather_data": true,
     "clean_outage_data": true,
     "align_data": true,
+    "calculate_event_stats": true,
     "skip_if_exists": true
   },
-
   "weather_variables": {
     "temperature": "tmpf",
     "wind_speed": "sknt",
     "wind_gust": "gust",
     "precipitation": "p01i"
   },
-
   "data_paths": {
     "eaglei_data_dir": "eagle-idatasets",
     "outage_data_dir": "outage_data",
     "weather_data_dir": "weather_data",
     "merged_data_dir": "merged_data",
+    "event_data_dir": "events_stats",
     "multi_county_data_dir": "multi_county_data",
     "results_dir": "results",
     "misc_dir": "misc"
   },
-
   "file_patterns": {
     "weather_file_pattern": "weather_{state}_{county}_{start}_{end}.parquet",
     "cleaned_weather_file_pattern": "cleaned_weather_{state}_{county}_{start}_{end}.nc",
@@ -52,133 +48,94 @@
     "cleaned_outage_file_pattern": "cleaned_outage_{state}_{county}_{start}_{end}.parquet",
     "merged_file_pattern": "merged_data_{state}_{county}_{start}_{end}.nc",
     "merged_result_file_pattern": "Outage_Events_Summary_All_{county}_{threshold}_{start}-{end}.csv",
-    "multi_county_data_file_pattern": "multi_county_data_{start}_{end}_{nCounties}_counties.nc"
+    "event_stats_file_pattern": "{county}_event_stats_{start}_{end}.parquet",
+    "multi_county_data_file_pattern": "multi_county_data_{start}_{end}_{label}_counties.nc"
   },
-
   "visualization_settings": {
     "figure_dpi": 300,
-    "figure_size": [12, 6]
+    "figure_size": [
+      12,
+      6
+    ]
   },
-
   "logging": {
     "log_level": "INFO",
     "enable_console_logging": true
   },
-
   "multi_county_analysis_parameters": {
     "state_county_pairs": [
-      {"state": "Illinois", "county": "Grundy"},
-      {"state": "Illinois", "county": "Jersey"},
-      {"state": "Illinois", "county": "Richland"},
-      {"state": "Illinois", "county": "Whiteside"},
-      {"state": "Illinois", "county": "Lake"},
-      {"state": "Illinois", "county": "Pope"},
-      {"state": "Illinois", "county": "Greene"},
-      {"state": "Illinois", "county": "Kankakee"},
-      {"state": "Illinois", "county": "Washington"},
-      {"state": "Illinois", "county": "Effingham"},
-      {"state": "Illinois", "county": "Crawford"},
-      {"state": "Illinois", "county": "Jackson"},
-      {"state": "Illinois", "county": "Bureau"},
-      {"state": "Illinois", "county": "Edgar"},
-      {"state": "Illinois", "county": "Franklin"},
-      {"state": "Illinois", "county": "Champaign"},
-      {"state": "Illinois", "county": "Jo Daviess"},
-      {"state": "Illinois", "county": "Edwards"},
-      {"state": "Illinois", "county": "LaSalle"},
-      {"state": "Illinois", "county": "Jasper"},
-      {"state": "Illinois", "county": "Henderson"},
-      {"state": "Illinois", "county": "Perry"},
-      {"state": "Illinois", "county": "Boone"},
-      {"state": "Illinois", "county": "Marion"},
-      {"state": "Illinois", "county": "Ford"},
-      {"state": "Illinois", "county": "Henry"},
-      {"state": "Illinois", "county": "Kendall"},
-      {"state": "Illinois", "county": "DeKalb"},
-      {"state": "Illinois", "county": "Marshall"},
-      {"state": "Illinois", "county": "Pike"},
-      {"state": "Illinois", "county": "Vermilion"},
-      {"state": "Illinois", "county": "Mason"},
-      {"state": "Illinois", "county": "Montgomery"},
-      {"state": "Illinois", "county": "Pulaski"},
-      {"state": "Illinois", "county": "Rock Island"},
-      {"state": "Illinois", "county": "Randolph"},
-      {"state": "Illinois", "county": "Clark"},
-      {"state": "Illinois", "county": "Winnebago"},
-      {"state": "Illinois", "county": "Union"},
-      {"state": "Illinois", "county": "Calhoun"},
-      {"state": "Illinois", "county": "Lee"},
-      {"state": "Illinois", "county": "McLean"},
-      {"state": "Illinois", "county": "De Witt"},
-      {"state": "Illinois", "county": "Johnson"},
-      {"state": "Illinois", "county": "Carroll"},
-      {"state": "Illinois", "county": "McHenry"},
-      {"state": "Illinois", "county": "Coles"},
-      {"state": "Illinois", "county": "Morgan"},
-      {"state": "Illinois", "county": "Saline"},
-      {"state": "Illinois", "county": "Brown"},
-      {"state": "Illinois", "county": "Stark"},
-      {"state": "Illinois", "county": "DuPage"},
-      {"state": "Illinois", "county": "Gallatin"},
-      {"state": "Illinois", "county": "Madison"},
-      {"state": "Illinois", "county": "Bond"},
-      {"state": "Illinois", "county": "White"},
-      {"state": "Illinois", "county": "Peoria"},
-      {"state": "Illinois", "county": "Cook"},
-      {"state": "Illinois", "county": "Macoupin"},
-      {"state": "Illinois", "county": "Shelby"},
-      {"state": "Illinois", "county": "Christian"},
-      {"state": "Illinois", "county": "Ogle"},
-      {"state": "Illinois", "county": "Adams"},
-      {"state": "Illinois", "county": "Alexander"},
-      {"state": "Illinois", "county": "Scott"},
-      {"state": "Illinois", "county": "Mercer"},
-      {"state": "Illinois", "county": "Piatt"},
-      {"state": "Illinois", "county": "Douglas"},
-      {"state": "Illinois", "county": "Hamilton"},
-      {"state": "Illinois", "county": "Fulton"},
-      {"state": "Illinois", "county": "Stephenson"},
-      {"state": "Illinois", "county": "Williamson"},
-      {"state": "Illinois", "county": "Sangamon"},
-      {"state": "Illinois", "county": "St. Clair"},
-      {"state": "Illinois", "county": "Knox"},
-      {"state": "Illinois", "county": "Kane"},
-      {"state": "Illinois", "county": "Hancock"},
-      {"state": "Illinois", "county": "Clay"},
-      {"state": "Illinois", "county": "McDonough"},
-      {"state": "Illinois", "county": "Moultrie"},
-      {"state": "Illinois", "county": "Woodford"},
-      {"state": "Illinois", "county": "Putnam"},
-      {"state": "Illinois", "county": "Iroquois"},
-      {"state": "Illinois", "county": "Monroe"},
-      {"state": "Illinois", "county": "Warren"},
-      {"state": "Illinois", "county": "Hardin"},
-      {"state": "Illinois", "county": "Lawrence"},
-      {"state": "Illinois", "county": "Jefferson"},
-      {"state": "Illinois", "county": "Will"},
-      {"state": "Illinois", "county": "Fayette"},
-      {"state": "Illinois", "county": "Logan"},
-      {"state": "Illinois", "county": "Clinton"},
-      {"state": "Illinois", "county": "Livingston"},
-      {"state": "Illinois", "county": "Massac"},
-      {"state": "Illinois", "county": "Tazewell"},
-      {"state": "Illinois", "county": "Macon"},
-      {"state": "Illinois", "county": "Menard"},
-      {"state": "Illinois", "county": "Cumberland"},
-      {"state": "Illinois", "county": "Wayne"},
-      {"state": "Illinois", "county": "Cass"},
-      {"state": "Illinois", "county": "Wabash"},
-      {"state": "Illinois", "county": "Schuyler"}
-    ]
+      {
+        "state": "Arizona",
+        "county": "Apache"
+      },
+      {
+        "state": "Arizona",
+        "county": "Cochise"
+      },
+      {
+        "state": "Arizona",
+        "county": "Coconino"
+      },
+      {
+        "state": "Arizona",
+        "county": "Gila"
+      },
+      {
+        "state": "Arizona",
+        "county": "Graham"
+      },
+      {
+        "state": "Arizona",
+        "county": "Greenlee"
+      },
+      {
+        "state": "Arizona",
+        "county": "La Paz"
+      },
+      {
+        "state": "Arizona",
+        "county": "Mohave"
+      },
+      {
+        "state": "Arizona",
+        "county": "Navajo"
+      },
+      {
+        "state": "Arizona",
+        "county": "Santa Cruz"
+      },
+      {
+        "state": "Arizona",
+        "county": "Yavapai"
+      },
+      {
+        "state": "Arizona",
+        "county": "Yuma"
+      }
+    ],
+    "label": "Arizona_nonrucc1"
   },
-
   "county_adjacency_changes": {
     "add_edges": [
-      {"from_state": "Massachusetts", "from_county": "Dukes", "to_state": "Massachusetts", "to_county": "Barnstable"},
-      {"from_state": "Massachusetts", "from_county": "Dukes", "to_state": "Massachusetts", "to_county": "Nantucket"}
+      {
+        "from_state": "Washington",
+        "from_county": "San Juan",
+        "to_state": "Washington",
+        "to_county": "Whatcom"
+      },
+      {
+        "from_state": "Washington",
+        "from_county": "San Juan",
+        "to_state": "Washington",
+        "to_county": "Island"
+      },
+      {
+        "from_state": "Washington",
+        "from_county": "San Juan",
+        "to_state": "Washington",
+        "to_county": "Skagit"
+      }
     ],
-    "del_edges": [
-      {"from_state": "Washington", "from_county": "Pierce", "to_state": "Washington", "to_county": "Kittitas"}
-    ]
+    "del_edges": []
   }
 }

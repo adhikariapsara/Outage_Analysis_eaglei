@@ -5,6 +5,8 @@ merged_data/*
 results/*
 multi_county_data/*
 /eagle-idatasets/eaglei_outages_*.csv
+/src/bayesian/results/
+
 
 # Environment and virtualenv files
 venv/
@@ -47,7 +49,8 @@ wheels/
 *.sublime-workspace
 
 # Logs
-logs/*.log
+logs/
+*.log
 
 # Testing
 .pytest_cache/
@@ -59,4 +62,3 @@ logs/*.log
 
 # OS specific
 Thumbs.db
-/dummy.py

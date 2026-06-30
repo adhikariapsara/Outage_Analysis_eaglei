@@ -9,6 +9,7 @@ from src import weather_cleaning
 from src import fetch_weather_data
 from src import merge_outage_weather
 from src import multi_county_analysis
+from src import calculate_event_stats
 from src.configManager import ConfigManager
 
 logger = logging.getLogger("eagleiLogger")
@@ -34,6 +35,7 @@ class PipelineManager:
             self.config.get("data_paths.outage_data_dir"),
             self.config.get("data_paths.weather_data_dir"),
             self.config.get("data_paths.results_dir"),
+            self.config.get("data_paths.event_data_dir"),
             "logs"
         ]
         for dir_path in dirs:
@@ -58,23 +60,28 @@ class PipelineManager:
             
             # Step 1: Fetch weather data
             if self.config.get("processing_options.fetch_weather_data"):
-                logger.info(f"Step 1/4: Fetching weather data for {state}...")
+                logger.info(f"Step 1/5: Fetching weather data for {state}...")
                 self._fetch_weather(state, county, start, end)
             
             # Step 2: Clean weather data
             if self.config.get("processing_options.clean_weather_data"):
-                logger.info(f"Step 2/4: Cleaning weather data...")
+                logger.info(f"Step 2/5: Cleaning weather data...")
                 self._clean_weather(state, county, start, end)
             
             # Step 3: Clean outage data
             if self.config.get("processing_options.clean_outage_data"):
-                logger.info(f"Step 3/4: Cleaning outage data...")
+                logger.info(f"Step 3/5: Cleaning outage data...")
                 self._clean_outage(state, county, start, end)
             
             # Step 4: Align and merge data
             if self.config.get("processing_options.align_data"):
-                logger.info(f"Step 4/4: Aligning outage and weather data...")
+                logger.info(f"Step 4/5: Aligning outage and weather data...")
                 self._align_data(state, county, start, end)
+
+            # Step 5: Calculate weather/outage stats for each event
+            if self.config.get("processing_options.calculate_event_stats"):
+                logger.info(f"Step 5/5: Calculating event stats...")
+                self._calculate_event_stats_single_county(state, county, start, end)
             
             logger.info("=" * 70)
             logger.info("✓ Full Pipeline Completed Successfully!")
@@ -133,6 +140,7 @@ class PipelineManager:
         except Exception as e:
             logger.error(f"Data alignment failed: {e}", exc_info=True)
             return False
+
         
     def run_multi_county_analysis(self) -> bool:
         """Execute multi-county analysis."""
@@ -141,6 +149,13 @@ class PipelineManager:
             county_pairs = self.config.get("multi_county_analysis_parameters.state_county_pairs")
             start = self.config.get("processing_parameters.start_year")
             end = self.config.get("processing_parameters.end_year")
+
+            multi_county_data_file_dir = self.config.get("data_paths.multi_county_data_dir")
+            os.makedirs(multi_county_data_file_dir, exist_ok=True)
+            multi_county_data_file_name = (self.config.get("file_patterns.multi_county_data_file_pattern").format
+                                           (start=start, end=end,
+                                            label=self.config.get("multi_county_analysis_parameters.label")))
+            multi_county_data_file_path = os.path.join(multi_county_data_file_dir, multi_county_data_file_name)
             
             # first check if county_pairs is not empty
             if not county_pairs:
@@ -159,8 +174,14 @@ class PipelineManager:
                     logger.error(f"Merged data file {merged_file_path} not found. Please run the full pipeline for {state} - {county} first.")
                     return False
 
-            multi_county_analysis.create_multi_county_events(county_pairs, start, end, self.config)
-            
+            if os.path.isfile(multi_county_data_file_path) and self.config.get("processing_options.skip_if_exists"):
+                logger.info(f"  → Multi-County data already exists. Skipping.")
+            else:
+                multi_county_analysis.create_multi_county_events(county_pairs, start, end, self.config)
+
+            if self.config.get("processing_options.calculate_event_stats"):
+                self._calculate_event_stats_multi_county(start, end)
+
             logger.info("✓ Multi-County Analysis Completed Successfully!")
             return True
         except Exception as e:
@@ -243,3 +264,30 @@ class PipelineManager:
         merge_outage_weather.merge_outages_with_weather_netcdf(state, county, start, end, self.config)
         logger.info(f"  ✓ Data alignment completed")
         logger.info(f"  → Results saved to: {self.config.get('data_paths.merged_data_dir')}/{state}/")
+
+    def _calculate_event_stats_single_county(self, state: str, county: str, start: int, end: int) -> None:
+        event_file_dir= os.path.join(self.config.get("data_paths.event_data_dir"), "county_events", state)
+        event_file_name= self.config.get("file_patterns.event_stats_file_pattern").format(start=start, end=end, county=county)
+        event_file_path = os.path.join(event_file_dir, event_file_name)
+
+        if os.path.isfile(event_file_path) and self.config.get("processing_options.skip_if_exists"):
+            logger.info(f"  → Event data already exists. Skipping.")
+            return
+
+        logger.info(f"  → Calculating Event Statistics...")
+        calculate_event_stats.calculate_event_stats_single_county(state, county, start, end, self.config)
+        logger.info(f"  ✓ Event Calculations completed")
+        logger.info(f"  → Results saved to: {self.config.get('data_paths.event_data_dir')}/county_events/{state}")
+
+    def _calculate_event_stats_multi_county(self, start: int, end: int) -> None:
+        event_file_dir= os.path.join(self.config.get("data_paths.event_data_dir"), "spatiotemporal_events")
+        event_file_name= self.config.get("file_patterns.event_stats_file_pattern").format(start=start, end=end,
+                                                county=self.config.get("multi_county_analysis_parameters.label"))
+        event_file_path = os.path.join(event_file_dir, event_file_name)
+        if os.path.isfile(event_file_path) and self.config.get("processing_options.skip_if_exists"):
+            logger.info(f"  → Event data already exists. Skipping.")
+            return
+        logger.info(f"  → Calculating Event Statistics...")
+        calculate_event_stats.initialize_multi_county_calc(start, end, self.config)
+        logger.info(f"  ✓ Event Calculations completed")
+        logger.info(f"  → Results saved to: {self.config.get('data_paths.event_data_dir')}/spatiotemporal_events")
