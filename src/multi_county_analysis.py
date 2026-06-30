@@ -43,9 +43,10 @@ def create_multi_county_events(state_county_pairs: list[dict],
         if not os.path.exists(merged_file_path):
             raise FileNotFoundError(f"Merged NetCDF file not found: {merged_file_path}")
         
-        # Open the county dataset
-        ds_county = xr.open_dataset(merged_file_path)
-        county_name = state + "_" + county
+        # Open the county dataset (load into memory so the file handle can be closed safely)
+        with xr.open_dataset(merged_file_path) as ds_tmp:
+            ds_county = ds_tmp.load()
+        county_name = f"{state}{county}"
         datasets[county_name] = ds_county
         
         # After successfully processing the county, use the attributes from ds_county to build the fips dataframe
@@ -53,8 +54,6 @@ def create_multi_county_events(state_county_pairs: list[dict],
                                                     'state_fips_code': [constants.STATE_FIPS_DICT.get(state.lower(), None)],
                                                     'county': [county], 
                                                     'county_fips_code': [ds_county.attrs.get('county_fips_code', None)]})], ignore_index=True)
-        # Close the individual dataset
-        ds_county.close()
 
     # Weather station data with dimensions (time, station)
     datasets_renamed = {}
